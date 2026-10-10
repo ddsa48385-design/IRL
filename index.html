@@ -235,16 +235,22 @@
   .meter div{height:100%;width:0;background:linear-gradient(90deg,var(--ok) 0 70%,var(--amber) 70% 90%,var(--tally) 90%);transition:width .08s}
   #phoneErr{position:absolute;left:18px;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
     background:rgba(255,75,75,.94);padding:11px 16px;border-radius:14px;font-size:14px;box-shadow:0 12px 30px -10px rgba(0,0,0,.6)}
-  /* มอนิเตอร์ภาพรวมที่คนดูเห็น (มาจาก OBS) */
-  #mon{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
-  #phone.hasMon #mon{display:block}
-  #phone.hasMon #pv{
-    position:absolute;right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
-    width:26vw;max-width:140px;height:auto;aspect-ratio:3/4;z-index:2;
-    border-radius:14px;border:2px solid rgba(255,255,255,.7);box-shadow:0 12px 30px -8px rgba(0,0,0,.7)
+  .obsbox{display:grid;gap:10px}
+  .obsrow{display:grid;grid-template-columns:84px 1fr;gap:8px}
+  .obsrow input{
+    min-width:0;background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:10px 12px;font:inherit;font-size:13.5px
   }
-  #phone.hasMon #hud{z-index:3}
-  #phone.hasMon #hud .grid,#phone.hasMon #hud .frame{display:none}
+  .obsnote{color:var(--muted);font-size:12.5px;line-height:1.5;padding-left:2px;min-height:1em}
+  .obshelp{color:var(--muted);font-size:13px;padding-left:2px}
+  .obshelp summary{cursor:pointer}
+  .obshelp ol{margin:8px 0 0 20px;display:grid;gap:4px}
+
+  /* โอเวอร์เลย์จาก OBS วางทับภาพกล้องบนมือถือ */
+  #ovl{position:absolute;display:none;overflow:hidden;pointer-events:none}
+  #ovlInner{position:absolute;left:0;top:0;transform-origin:0 0}
+  #ovlInner iframe,#ovlInner img{pointer-events:none}
+  #phone.ovlOn #hud .grid,#phone.ovlOn #hud .frame{display:none}
 </style>
 </head>
 <body>
@@ -357,17 +363,33 @@
 
     <div class="group">
       <h3>หน้าจอบนมือถือ</h3>
-      <button class="switch" id="hudSwitch" role="switch" aria-checked="false">
+      <button class="switch" id="hudSwitch" role="switch" aria-checked="true">
         <span>แสดงหน้าจอแบบ OBS
-          <small>มือถือจะเห็นภาพเหมือนที่คนดูไลฟ์เห็นทุกอย่าง (ภาพรวมจาก OBS) ส่วนนี้ส่งให้มือถือคนเดียว ไม่ถูกส่งไปให้คนดู</small>
+          <small>มือถือจะเห็นเหมือนที่คนดูเห็น คือภาพกล้อง + โอเวอร์เลย์ที่คุณใส่ไว้ใน OBS (ดึงจาก OBS ให้เอง ไม่ได้แชร์จอ) คนดูไม่เห็นส่วนนี้</small>
         </span>
         <span class="track" aria-hidden="true"></span>
       </button>
-      <small id="monNote" style="color:var(--muted);font-size:12.5px;line-height:1.5;padding-left:2px"></small>
-      <button class="act" id="btnMonSrc">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
-        แชร์หน้าต่าง OBS แทน Virtual Camera
-      </button>
+      <div class="obsbox">
+        <div class="obsrow">
+          <input id="obsPort" inputmode="numeric" value="4455" aria-label="พอร์ต OBS WebSocket">
+          <input id="obsPass" type="password" placeholder="รหัสผ่าน OBS (ถ้าตั้งไว้)" aria-label="รหัสผ่าน OBS WebSocket" autocomplete="off">
+        </div>
+        <button class="act" id="btnObs">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>
+          <span id="obsBtnTxt">เชื่อมต่อ OBS</span>
+        </button>
+        <small id="obsNote" class="obsnote"></small>
+        <details class="obshelp">
+          <summary>วิธีเปิดการเชื่อมต่อใน OBS</summary>
+          <ol>
+            <li>ใน OBS เลือกเมนู Tools แล้วเข้า WebSocket Server Settings</li>
+            <li>ติ๊ก Enable WebSocket server (พอร์ตปกติคือ 4455)</li>
+            <li>ถ้าเปิดรหัสผ่านไว้ ให้คัดลอกรหัสมาใส่ช่องด้านบน แล้วกด “เชื่อมต่อ OBS”</li>
+          </ol>
+        </details>
+        <button class="act" id="btnAddOvl">เพิ่มลิงก์โอเวอร์เลย์เอง</button>
+        <button class="act" id="btnClrOvl">ล้างลิงก์ที่เพิ่มเอง</button>
+      </div>
     </div>
 
     <div class="group">
@@ -396,8 +418,8 @@
 
 <!-- ===== หน้ามือถือ ===== -->
 <section id="phone" hidden>
-  <video id="mon" autoplay playsinline muted></video>
   <video id="pv" autoplay playsinline muted></video>
+  <div id="ovl"><div id="ovlInner"></div></div>
   <div id="dot" aria-hidden="true"></div>
   <div id="hud">
     <div class="grid"></div>
@@ -454,8 +476,7 @@
   }
 
   let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode;
-  let hudOn = false;                       // true = กำลังส่งภาพมอนิเตอร์ไปที่มือถือ
-  let monStream = null, monCall = null;
+  let hudOn = true;
 
   function startPC(){
     show('pair');
@@ -475,7 +496,8 @@
       dataConn = c;
       c.on('open', () => {
         $('pairStatus').textContent = 'มือถือเชื่อมต่อแล้ว กำลังรอภาพ…';
-        if (hudOn) startMonitorCall();       // มือถือต่อกลับมา ส่งภาพมอนิเตอร์ให้ใหม่
+        c.send({ t:'hud', on: hudOn });
+        pushOverlay(true);
       });
       c.on('data', onPhoneData);
       c.on('close', () => { $('lostMsg').hidden = false; });
@@ -509,6 +531,7 @@
     if (m.t === 'info') {
       if (typeof m.battery === 'number') $('sBat').textContent = Math.round(m.battery*100) + '%';
     }
+    if (m.t === 'hud') { hudOn = !!m.on; setSwitch('hudSwitch', hudOn); }
   }
 
   function startPCStats(){
@@ -538,73 +561,169 @@
 
   $('cancelPair').addEventListener('click', endPC);
 
-  /* ----- มอนิเตอร์ OBS ส่งไปมือถือ ----- */
-  const monNote = t => { $('monNote').textContent = t; };
+  /* ----- ดึงโอเวอร์เลย์จาก OBS (obs-websocket v5) แล้วส่งให้มือถือวางทับภาพกล้อง ----- */
+  let obsWs = null, obsPoll = null, obsSeq = 0, obsBusy = false;
+  let obsCanvas = null, obsLayers = [], manualLayers = [], lastOvlJson = '';
+  const obsReq = new Map(), obsInputCache = new Map(), obsShotCache = new Map();
+  const obsNote = t => { $('obsNote').textContent = t; };
+  const setObsBtn = on => { $('obsBtnTxt').textContent = on ? 'ตัดการเชื่อมต่อ OBS' : 'เชื่อมต่อ OBS'; };
 
-  async function findObsCamera(){
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
-    let devs = await navigator.mediaDevices.enumerateDevices();
-    if (!devs.some(d => d.kind === 'videoinput' && d.label)) {
-      // ต้องขอสิทธิ์กล้องก่อน เบราว์เซอร์ถึงจะบอกชื่ออุปกรณ์
-      try { (await navigator.mediaDevices.getUserMedia({ video:true })).getTracks().forEach(t => t.stop()); }
-      catch(e){ return null; }
-      devs = await navigator.mediaDevices.enumerateDevices();
-    }
-    return devs.find(d => d.kind === 'videoinput' && /obs/i.test(d.label)) || null;
+  async function sha256b64(str){
+    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return btoa(String.fromCharCode(...new Uint8Array(b)));
   }
 
-  async function startMonitor(mode){
-    try {
-      let s = null;
-      if (mode === 'auto') {
-        const d = await findObsCamera();
-        if (d) {
-          s = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: d.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
-          monNote('ใช้ OBS Virtual Camera อยู่ (ต้องกด Start Virtual Camera ใน OBS ค้างไว้)');
+  function obsRequest(type, data){
+    return new Promise((res, rej) => {
+      if (!obsWs || obsWs.readyState !== 1) return rej(new Error('ยังไม่ได้เชื่อมต่อ'));
+      const id = 'r' + (++obsSeq);
+      obsReq.set(id, { res, rej });
+      obsWs.send(JSON.stringify({ op: 6, d: { requestType: type, requestId: id, requestData: data || {} } }));
+      setTimeout(() => { if (obsReq.has(id)) { obsReq.delete(id); rej(new Error('OBS ไม่ตอบ')); } }, 8000);
+    });
+  }
+
+  function obsConnect(){
+    obsDisconnect(true);
+    const port = parseInt($('obsPort').value, 10) || 4455;
+    const pass = $('obsPass').value;
+    obsNote('กำลังเชื่อมต่อ OBS…');
+    let ws;
+    try { ws = new WebSocket('ws://localhost:' + port); }
+    catch (e) { obsNote('เชื่อมต่อไม่ได้: ' + e.message); return; }
+    obsWs = ws;
+    ws.onmessage = async ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.op === 0) {
+        const idf = { op: 1, d: { rpcVersion: 1, eventSubscriptions: 0 } };
+        if (m.d.authentication) {
+          if (!pass) { obsNote('OBS ตั้งรหัสผ่านไว้ กรอกรหัสผ่านก่อนแล้วกดเชื่อมต่อใหม่'); ws.close(); return; }
+          const secret = await sha256b64(pass + m.d.authentication.salt);
+          idf.d.authentication = await sha256b64(secret + m.d.authentication.challenge);
+        }
+        ws.send(JSON.stringify(idf));
+      } else if (m.op === 2) {
+        setObsBtn(true);
+        obsNote('เชื่อมต่อ OBS แล้ว กำลังดึงโอเวอร์เลย์…');
+        obsSync(true);
+        obsPoll = setInterval(() => obsSync(false), 3000);
+      } else if (m.op === 7) {
+        const p = obsReq.get(m.d.requestId);
+        if (p) {
+          obsReq.delete(m.d.requestId);
+          if (m.d.requestStatus.result) p.res(m.d.responseData || {});
+          else p.rej(new Error(m.d.requestStatus.comment || 'คำสั่งล้มเหลว'));
         }
       }
-      if (!s) {
-        s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: false });
-        monNote('กำลังแชร์หน้าต่าง/จอที่เลือก ให้เลือกหน้าต่าง OBS (หรือ Projector) อย่าเลือกหน้าเว็บนี้ ไม่งั้นภาพจะซ้อนกันเป็นอุโมงค์');
+    };
+    ws.onclose = ev => {
+      if (obsWs !== ws) return;
+      obsWs = null; clearInterval(obsPoll); obsPoll = null; setObsBtn(false);
+      obsNote(ev.code === 4009 ? 'รหัสผ่าน OBS ไม่ถูกต้อง'
+        : 'เชื่อมต่อ OBS ไม่ได้ ตรวจว่าเปิด WebSocket Server ใน OBS แล้ว พอร์ตถูกต้อง และเบราว์เซอร์อนุญาตให้เข้าถึงอุปกรณ์ในเครือข่าย');
+    };
+    ws.onerror = () => {};
+  }
+
+  function obsDisconnect(silent){
+    clearInterval(obsPoll); obsPoll = null;
+    const ws = obsWs; obsWs = null;
+    if (ws) { try { ws.close(); } catch (e) {} }
+    obsReq.forEach(p => p.rej(new Error('ปิดการเชื่อมต่อแล้ว'))); obsReq.clear();
+    obsCanvas = null; obsLayers = [];
+    obsInputCache.clear(); obsShotCache.clear();
+    setObsBtn(false);
+    if (!silent) obsNote('');
+    pushOverlay(false);
+  }
+
+  async function buildLayer(it, t, kind){
+    let w = t.width, h = t.height;
+    if (t.boundsType && t.boundsType !== 'OBS_BOUNDS_NONE') { w = t.boundsWidth; h = t.boundsHeight; }
+    if (!(w > 0 && h > 0)) return null;
+    const al = t.alignment || 5;                         // 5 = ชิดซ้ายบน (ค่าเริ่มต้นของ OBS)
+    const fx = (al & 1) ? 0 : (al & 2) ? 1 : 0.5;
+    const fy = (al & 4) ? 0 : (al & 8) ? 1 : 0.5;
+    const x = t.positionX - fx * w, y = t.positionY - fy * h;
+    const id = 'o' + it.sceneItemId;
+
+    if (kind === 'browser_source') {
+      let st = obsInputCache.get(it.sourceName);
+      if (!st) {
+        st = (await obsRequest('GetInputSettings', { inputName: it.sourceName })).inputSettings || {};
+        obsInputCache.set(it.sourceName, st);
       }
-      monStream = s;
-      hudOn = true; setSwitch('hudSwitch', true);
-      s.getVideoTracks()[0].addEventListener('ended', stopMonitor);
-      startMonitorCall();
-    } catch (e) {
-      hudOn = false; setSwitch('hudSwitch', false);
-      monNote('เปิดภาพจาก OBS ไม่ได้ (' + (e.name || 'error') + ') ตรวจว่ากด Start Virtual Camera ใน OBS แล้ว หรือกด “แชร์หน้าต่าง OBS” แทน');
+      if (st.url && !st.is_local_file) {
+        const sw = t.sourceWidth || st.width || 800, sh = t.sourceHeight || st.height || 600;
+        return { id, type: 'web', url: st.url, sw, sh, x, y, w, h };
+      }
     }
+    if (kind === 'browser_source' || kind === 'image_source') {   // ไฟล์ในเครื่อง มือถือโหลดเองไม่ได้ จึงส่งเป็นภาพนิ่งแทน
+      let src = obsShotCache.get(it.sourceName);
+      if (!src) {
+        try {
+          const r = await obsRequest('GetSourceScreenshot', { sourceName: it.sourceName, imageFormat: 'png', imageWidth: Math.min(Math.round(t.sourceWidth || 1280), 1280) });
+          src = r.imageData; obsShotCache.set(it.sourceName, src);
+        } catch (e) { return null; }
+      }
+      return { id, type: 'img', src, x, y, w, h };
+    }
+    return null;
   }
 
-  function startMonitorCall(){
-    if (!monStream || !dataConn || !dataConn.open) return;
-    try { if (monCall) monCall.close(); } catch(e){}
-    monCall = peer.call(dataConn.peer, monStream);
-    const mc = monCall;
-    setTimeout(() => {
-      try {
-        const sd = mc.peerConnection.getSenders().find(x => x.track && x.track.kind === 'video');
-        const p = sd.getParameters();
-        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-        p.encodings[0].maxBitrate = 1500000;   // พอสำหรับดูบนมือถือ ไม่กินเน็ตมือถือมาก
-        sd.setParameters(p).catch(() => {});
-      } catch(e){}
-    }, 1200);
+  async function obsSync(force){
+    if (obsBusy) return;
+    obsBusy = true;
+    try {
+      if (force) { obsInputCache.clear(); obsShotCache.clear(); }
+      const vs = await obsRequest('GetVideoSettings');
+      obsCanvas = { w: vs.baseWidth, h: vs.baseHeight };
+      const cur = await obsRequest('GetCurrentProgramScene');
+      const sceneName = cur.sceneName || cur.currentProgramSceneName;
+      const list = (await obsRequest('GetSceneItemList', { sceneName })).sceneItems || [];
+      list.sort((a, b) => a.sceneItemIndex - b.sceneItemIndex);
+      const out = []; let skipped = 0;
+      for (const it of list) {
+        if (!it.sceneItemEnabled || it.isGroup) continue;
+        const layer = await buildLayer(it, it.sceneItemTransform || {}, it.inputKind);
+        if (layer) out.push(layer); else skipped++;
+      }
+      obsLayers = out;
+      obsNote('ซีน “' + sceneName + '” ดึงโอเวอร์เลย์มา ' + out.length + ' ชั้น' + (skipped ? ' (ข้าม ' + skipped + ' แหล่ง เช่น กล้อง/จับภาพหน้าจอ ที่ใช้ภาพจากมือถือแทน)' : ''));
+      pushOverlay(false);
+    } catch (e) {
+      obsNote('ดึงข้อมูลจาก OBS ไม่ได้: ' + e.message);
+    } finally { obsBusy = false; }
   }
 
-  function stopMonitor(){
-    hudOn = false; setSwitch('hudSwitch', false);
-    try { if (monCall) monCall.close(); } catch(e){}
-    if (monStream) monStream.getTracks().forEach(t => t.stop());
-    monStream = null; monCall = null;
-    try { if (dataConn && dataConn.open) dataConn.send({ t:'monitor', on:false }); } catch(e){}
-    monNote('');
+  function overlayPayload(){
+    const layers = obsLayers.concat(manualLayers);
+    if (!layers.length) return null;
+    return { canvas: obsCanvas || { w: 1920, h: 1080 }, layers };
+  }
+  function pushOverlay(force){
+    const p = overlayPayload();
+    const json = JSON.stringify(p);
+    if (!force && json === lastOvlJson) return;
+    lastOvlJson = json;
+    try { if (dataConn && dataConn.open) dataConn.send({ t: 'overlay', data: p }); } catch (e) {}
   }
 
-  $('hudSwitch').addEventListener('click', () => { if (hudOn) stopMonitor(); else startMonitor('auto'); });
-  $('btnMonSrc').addEventListener('click', () => { if (hudOn) stopMonitor(); startMonitor('screen'); });
+  $('btnObs').addEventListener('click', () => { if (obsWs) obsDisconnect(false); else obsConnect(); });
+  $('btnAddOvl').addEventListener('click', () => {
+    const u = prompt('วางลิงก์โอเวอร์เลย์ (ลิงก์เดียวกับที่ใส่ใน Browser Source ของ OBS)');
+    if (!u) return;
+    if (!/^https:\/\//i.test(u.trim())) { obsNote('ลิงก์ต้องขึ้นต้นด้วย https:// เท่านั้น (มือถือโหลด http ในหน้า https ไม่ได้)'); return; }
+    const c = obsCanvas || { w: 1920, h: 1080 };
+    manualLayers.push({ id: 'm' + Date.now(), type: 'web', url: u.trim(), sw: c.w, sh: c.h, x: 0, y: 0, w: c.w, h: c.h });
+    pushOverlay(false);
+  });
+  $('btnClrOvl').addEventListener('click', () => { manualLayers = []; pushOverlay(false); });
+
+  $('hudSwitch').addEventListener('click', () => {
+    hudOn = !hudOn; setSwitch('hudSwitch', hudOn);
+    if (dataConn && dataConn.open) dataConn.send({ t:'hud', on: hudOn });
+  });
 
   $('muteSwitch').addEventListener('click', () => {
     const on = $('muteSwitch').getAttribute('aria-checked') !== 'true';
@@ -637,9 +756,8 @@
     try { if (dataConn) dataConn.send({ t:'end' }); } catch(e){}
     try { if (mediaCall) mediaCall.close(); } catch(e){}
     try { if (peer) peer.destroy(); } catch(e){}
+    obsDisconnect(true);
     connectedAt = 0; dataConn = null; mediaCall = null;
-    if (monStream) monStream.getTracks().forEach(t => t.stop());
-    monStream = null; monCall = null; hudOn = false; setSwitch('hudSwitch', false); monNote('');
     $('mainVideo').srcObject = null;
     show('home');
   }
@@ -653,17 +771,63 @@
 
     const err = msg => { $('phoneErr').textContent = msg; $('phoneErr').hidden = !msg; };
 
-    let monStream = null, monView = true;   // monStream = ภาพที่คนดูเห็น (ส่งมาจากคอม)
+    let ovlData = null;                       // โอเวอร์เลย์ที่คอมดึงจาก OBS ส่งมา
+    const layerEls = new Map();
+
+    function renderOverlay(){
+      const pv = $('pv'), box = $('ovl'), inner = $('ovlInner');
+      const on = !!(hud && ovlData && ovlData.layers && ovlData.layers.length);
+      $('phone').classList.toggle('ovlOn', on);
+      if (!on) {
+        box.style.display = 'none';
+        pv.style.position = pv.style.left = pv.style.top = pv.style.width = pv.style.height = '';
+        layerEls.forEach(el => el.remove()); layerEls.clear();
+        return;
+      }
+      const W = innerWidth, H = innerHeight, cw = ovlData.canvas.w, ch = ovlData.canvas.h;
+      const k = Math.min(W / cw, H / ch), w = cw * k, h = ch * k, l = (W - w) / 2, tp = (H - h) / 2;
+      Object.assign(pv.style, { position: 'absolute', left: l + 'px', top: tp + 'px', width: w + 'px', height: h + 'px' });
+      Object.assign(box.style, { display: 'block', left: l + 'px', top: tp + 'px', width: w + 'px', height: h + 'px' });
+      inner.style.width = cw + 'px'; inner.style.height = ch + 'px'; inner.style.transform = 'scale(' + k + ')';
+
+      const keep = new Set();
+      ovlData.layers.forEach((L, i) => {
+        keep.add(L.id);
+        const sig = L.type === 'web' ? 'w|' + L.url + '|' + L.sw + '|' + L.sh : 'i|' + L.src.length + '|' + L.src.slice(-32);
+        let el = layerEls.get(L.id);
+        if (el && el.dataset.sig !== sig) { el.remove(); layerEls.delete(L.id); el = null; }
+        if (!el) {
+          if (L.type === 'web') {
+            el = document.createElement('iframe');
+            el.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+            el.setAttribute('allow', 'autoplay');
+            el.src = L.url;
+          } else {
+            el = document.createElement('img');
+            el.src = L.src;
+          }
+          el.dataset.sig = sig;
+          el.style.cssText = 'position:absolute;border:0;background:transparent;pointer-events:none;transform-origin:0 0';
+          inner.appendChild(el); layerEls.set(L.id, el);
+        }
+        el.style.left = L.x + 'px'; el.style.top = L.y + 'px'; el.style.zIndex = String(i + 1);
+        if (L.type === 'web') {
+          el.style.width = L.sw + 'px'; el.style.height = L.sh + 'px';
+          el.style.transform = 'scale(' + (L.w / L.sw) + ',' + (L.h / L.sh) + ')';
+        } else {
+          el.style.width = L.w + 'px'; el.style.height = L.h + 'px';
+        }
+      });
+      layerEls.forEach((el, id) => { if (!keep.has(id)) { el.remove(); layerEls.delete(id); } });
+    }
+    window.addEventListener('resize', renderOverlay);
 
     function applyHud(on){
       hud = on;
       $('hud').hidden = !on;
+      renderOverlay();
     }
     applyHud(true);
-
-    function renderView(){
-      $('phone').classList.toggle('hasMon', !!monStream && monView);
-    }
 
     async function getMedia(wantAudio){
       const c = {
@@ -699,19 +863,11 @@
       setState('กำลังเชื่อมต่อ', true);
       if (pPeer && !pPeer.destroyed) pPeer.destroy();
       pPeer = new Peer({ config: RTC });
-      pPeer.on('call', call => {            // คอมส่งภาพมอนิเตอร์ (สิ่งที่คนดูเห็น) มาให้
-        call.answer();
-        call.on('stream', s => {
-          monStream = s; monView = true;
-          $('mon').srcObject = s; $('mon').play().catch(() => {});
-          renderView();
-        });
-        call.on('close', () => { monStream = null; $('mon').srcObject = null; renderView(); });
-      });
       pPeer.on('open', () => {
         pConn = pPeer.connect(pcId, { reliable: true });
         pConn.on('open', () => {
           sendInfo();
+          pConn.send({ t:'hud', on: hud });
           pCall = pPeer.call(pcId, stream);
           pCall.on('close', retry);
           setTimeout(tuneBitrate, 1200);
@@ -746,7 +902,8 @@
 
     function onPCData(m){
       if (!m) return;
-      if (m.t === 'monitor' && !m.on) { monStream = null; $('mon').srcObject = null; renderView(); }
+      if (m.t === 'hud') applyHud(!!m.on);
+      if (m.t === 'overlay') { ovlData = m.data || null; renderOverlay(); }
       if (m.t === 'flip') flip();
       if (m.t === 'end') {
         ended = true;
@@ -846,11 +1003,11 @@
       }
     }, 1000);
 
-    // แตะหน้าจอมือถือ: ถ้ามีภาพมอนิเตอร์ ให้สลับดู "ภาพที่คนดูเห็น" / "ภาพกล้องเรา", ถ้ายังไม่มีให้สลับ HUD
+    // แตะหน้าจอมือถือเพื่อสลับ HUD เอง (ซิงก์กับคอม)
     $('phone').addEventListener('click', e => {
       if (!stream || e.target.closest('button')) return;
-      if (monStream) { monView = !monView; renderView(); }
-      else applyHud(!hud);
+      applyHud(!hud);
+      if (pConn && pConn.open) pConn.send({ t:'hud', on: hud });
     });
 
     document.addEventListener('visibilitychange', async () => {
