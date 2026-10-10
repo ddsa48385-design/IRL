@@ -606,7 +606,7 @@
         setObsBtn(true);
         obsNote('เชื่อมต่อ OBS แล้ว กำลังดึงโอเวอร์เลย์…');
         obsSync(true);
-        obsPoll = setInterval(() => obsSync(false), 3000);
+        obsPoll = setInterval(() => obsSync(false), 1000);
       } else if (m.op === 7) {
         const p = obsReq.get(m.d.requestId);
         if (p) {
@@ -647,23 +647,18 @@
     const x = t.positionX - fx * w, y = t.positionY - fy * h;
     const id = 'o' + it.sceneItemId;
 
-    if (kind === 'browser_source') {
-      let st = obsInputCache.get(it.sourceName);
-      if (!st) {
-        st = (await obsRequest('GetInputSettings', { inputName: it.sourceName })).inputSettings || {};
-        obsInputCache.set(it.sourceName, st);
-      }
-      if (st.url && !st.is_local_file) {
-        const sw = t.sourceWidth || st.width || 800, sh = t.sourceHeight || st.height || 600;
-        return { id, type: 'web', url: st.url, sw, sh, x, y, w, h };
-      }
-    }
-    if (kind === 'browser_source' || kind === 'image_source') {   // ไฟล์ในเครื่อง มือถือโหลดเองไม่ได้ จึงส่งเป็นภาพนิ่งแทน
-      let src = obsShotCache.get(it.sourceName);
+    if (kind === 'browser_source' || kind === 'image_source') {
+      // ขอภาพของแหล่งนั้นจาก OBS โดยตรง (มีพื้นหลังโปร่งใส) ไม่ต้องฝังเว็บในมือถือ เลยไม่ติดปัญหาเว็บที่ห้ามฝัง
+      const live = kind === 'browser_source';         // Browser Source ขยับได้ ต้องดึงใหม่ทุกรอบ ส่วนรูปนิ่งดึงครั้งเดียว
+      let src = live ? null : obsShotCache.get(it.sourceName);
       if (!src) {
         try {
-          const r = await obsRequest('GetSourceScreenshot', { sourceName: it.sourceName, imageFormat: 'png', imageWidth: Math.min(Math.round(t.sourceWidth || 1280), 1280) });
-          src = r.imageData; obsShotCache.set(it.sourceName, src);
+          const r = await obsRequest('GetSourceScreenshot', {
+            sourceName: it.sourceName, imageFormat: 'png',
+            imageWidth: Math.max(64, Math.min(Math.round(w), 1000))
+          });
+          src = r.imageData;
+          if (!live) obsShotCache.set(it.sourceName, src);
         } catch (e) { return null; }
       }
       return { id, type: 'img', src, x, y, w, h };
@@ -795,7 +790,10 @@
         keep.add(L.id);
         const sig = L.type === 'web' ? 'w|' + L.url + '|' + L.sw + '|' + L.sh : 'i|' + L.src.length + '|' + L.src.slice(-32);
         let el = layerEls.get(L.id);
-        if (el && el.dataset.sig !== sig) { el.remove(); layerEls.delete(L.id); el = null; }
+        if (el && el.dataset.sig !== sig) {
+          if (L.type === 'img' && el.tagName === 'IMG') { el.src = L.src; el.dataset.sig = sig; }
+          else { el.remove(); layerEls.delete(L.id); el = null; }
+        }
         if (!el) {
           if (L.type === 'web') {
             el = document.createElement('iframe');
