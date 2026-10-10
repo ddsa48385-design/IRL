@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IRL Cam – เปลี่ยนมือถือเป็นกล้องไลฟ์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --bg:#111733;
+    --glass:rgba(255,255,255,.055);
+    --glass-strong:rgba(255,255,255,.09);
+    --line:rgba(255,255,255,.12);
+    --text:#f2f4fb;
+    --muted:#a6b0cc;
+    --tally:#ff4b4b;
+    --ok:#5fd4a0;
+    --amber:#f5b94c;
+    --glow:#7c8cff;
+    --display:'Prompt','IBM Plex Sans Thai',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none!important}
+  html,body{height:100%}
+  body{
+    color:var(--text);
+    font-family:'IBM Plex Sans Thai',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:16px;line-height:1.6;
+    background:
+      radial-gradient(52rem 34rem at 88% -8%, rgba(255,75,75,.17), transparent 62%),
+      radial-gradient(56rem 40rem at -8% 108%, rgba(124,140,255,.22), transparent 62%),
+      var(--bg);
+    background-attachment:fixed;
+  }
+  button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+  button:focus-visible,input:focus-visible{outline:3px solid #9db6ff;outline-offset:2px}
+  .ico{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ---------- ส่วนประกอบกลาง ---------- */
+  .tally{position:relative;display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--tally);box-shadow:0 0 14px 2px rgba(255,75,75,.7)}
+  .tally::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--tally);opacity:0;animation:ring 2.2s ease-out infinite}
+  @keyframes ring{0%{transform:scale(.6);opacity:.8}100%{transform:scale(1.7);opacity:0}}
+  .pulse{width:10px;height:10px;border-radius:50%;background:var(--amber);animation:pulse 1.4s ease-in-out infinite;flex:none}
+  @keyframes pulse{50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.tally::after,.pulse,.link-anim{animation:none!important}}
+
+  .glass{
+    background:var(--glass);border:1px solid var(--line);border-radius:22px;
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    box-shadow:0 30px 60px -30px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.07);
+  }
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    font-weight:600;font-size:17px;color:#fff;padding:15px 28px;border-radius:999px;
+    background:linear-gradient(180deg,#ff6666,#f13a3a);
+    box-shadow:0 14px 34px -10px rgba(255,75,75,.7), inset 0 1px 0 rgba(255,255,255,.35);
+    transition:transform .14s, filter .14s;
+  }
+  .btn:hover{filter:brightness(1.07)}
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{
+    background:var(--glass);border:1px solid var(--line);box-shadow:none;
+    font-size:15px;font-weight:500;padding:10px 20px;
+  }
+  .btn.ghost:hover{background:var(--glass-strong);filter:none}
+  .screen{min-height:100%;display:flex;align-items:center;justify-content:center;padding:36px 22px}
+
+  /* ---------- หน้าแรก ---------- */
+  .hero{width:100%;max-width:1060px;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
+  .hero h1{font-family:var(--display);font-size:clamp(36px,5.4vw,60px);line-height:1.12;font-weight:700;letter-spacing:-.015em;margin:22px 0 16px}
+  .lead{color:var(--muted);font-size:17px;max-width:46ch;margin-bottom:30px}
+  .steps{list-style:none;margin-top:38px;display:grid;gap:14px;counter-reset:s}
+  .steps li{counter-increment:s;display:flex;gap:14px;align-items:flex-start;color:var(--muted);font-size:15px}
+  .steps li::before{
+    content:counter(s);flex:none;width:28px;height:28px;border-radius:50%;
+    display:grid;place-items:center;font-family:var(--display);font-weight:600;font-size:14px;
+    color:var(--text);background:var(--glass-strong);border:1px solid var(--line);
+  }
+  .warn{margin-top:24px;padding:12px 16px;border-radius:14px;background:rgba(245,185,76,.12);border:1px solid rgba(245,185,76,.3);color:#ffd48f;font-size:14px}
+
+  .diagram{position:relative;padding:22px;aspect-ratio:1/.92}
+  .diagram svg{width:100%;height:100%;display:block;overflow:visible}
+  .link-anim{stroke-dasharray:6 8;animation:dash 1.1s linear infinite}
+  @keyframes dash{to{stroke-dashoffset:-28}}
+
+  /* ---------- หน้าจับคู่ ---------- */
+  .pairCard{width:100%;max-width:780px;padding:36px;display:grid;grid-template-columns:auto 1fr;gap:38px;align-items:center}
+  .pairCard h1{font-family:var(--display);font-size:clamp(28px,4.4vw,38px);line-height:1.2;font-weight:700;margin-bottom:10px}
+  .pairCard .lead{font-size:16px;margin-bottom:22px}
+  .qrframe{position:relative;padding:12px}
+  .qrframe::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(var(--tally),var(--tally)) top left/26px 3px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) top left/3px 26px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) top right/26px 3px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) top right/3px 26px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) bottom left/26px 3px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) bottom left/3px 26px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) bottom right/26px 3px no-repeat,
+      linear-gradient(var(--tally),var(--tally)) bottom right/3px 26px no-repeat;
+  }
+  #qr{background:#fff;border-radius:16px;padding:16px;width:fit-content;min-width:256px;min-height:256px;box-shadow:0 20px 50px -18px rgba(0,0,0,.7)}
+  #qr img{display:block}
+  .linkrow{display:flex;gap:8px;margin-bottom:18px}
+  .linkrow input{
+    flex:1;min-width:0;background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:10px 14px;font:inherit;font-size:13px
+  }
+  .status{display:inline-flex;align-items:center;gap:10px;padding:8px 16px;border-radius:999px;background:var(--glass);border:1px solid var(--line);color:var(--muted);font-size:14.5px;margin-bottom:20px}
+  .pairCard .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+  /* ---------- หน้าไลฟ์ (คอม) ---------- */
+  #live{height:100%;display:grid;grid-template-columns:1fr 340px;gap:18px;padding:18px}
+  #stage{
+    position:relative;background:#000;border-radius:22px;overflow:hidden;min-height:0;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);box-shadow:0 40px 80px -30px rgba(0,0,0,.7);
+  }
+  #stage video{width:100%;height:100%;object-fit:contain;background:#000}
+  #stage:fullscreen{border-radius:0;border:0}
+  #stage .overlayMsg{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+    background:rgba(10,14,32,.82);backdrop-filter:blur(8px);text-align:center;padding:24px
+  }
+  #fsHint{
+    position:absolute;top:16px;left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,.65);padding:7px 16px;border-radius:999px;font-size:13px;color:#e6e9f3;
+    opacity:0;pointer-events:none;transition:opacity .4s
+  }
+  #stage:fullscreen #fsHint.show{opacity:1}
+
+  .side{padding:22px;display:flex;flex-direction:column;gap:22px;overflow:auto}
+  .side h2{font-family:var(--display);font-size:20px;font-weight:600;display:flex;align-items:center;gap:14px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+  .stat .ico{color:var(--glow);width:18px;height:18px;margin-bottom:6px}
+  .stat b{display:block;font-family:var(--display);font-size:21px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
+  .stat span{font-size:12.5px;color:var(--muted)}
+  .group{display:grid;gap:10px}
+  .group h3{font-size:13.5px;font-weight:500;color:var(--muted);padding-left:2px}
+  .switch{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;text-align:left;
+    background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:16px;padding:14px 16px;font-weight:500;
+    transition:background .14s;
+  }
+  .switch:hover{background:rgba(0,0,0,.32)}
+  .switch small{display:block;color:var(--muted);font-weight:400;font-size:12.5px;line-height:1.45;margin-top:3px}
+  .track{flex:none;width:48px;height:28px;border-radius:999px;background:rgba(255,255,255,.18);position:relative;transition:background .18s}
+  .track::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);transition:transform .18s}
+  .switch[aria-checked="true"] .track{background:var(--ok)}
+  .switch[aria-checked="true"] .track::after{transform:translateX(20px)}
+  .act{
+    display:flex;align-items:center;gap:12px;width:100%;
+    background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:16px;padding:13px 16px;font-weight:500;
+    transition:background .14s, transform .1s;
+  }
+  .act:hover{background:rgba(0,0,0,.34)}
+  .act:active{transform:scale(.985)}
+  .act .ico{color:var(--muted)}
+  .act.danger{color:#ff9a9a;border-color:rgba(255,75,75,.3);background:rgba(255,75,75,.08)}
+  .act.danger .ico{color:#ff9a9a}
+  .act.danger:hover{background:rgba(255,75,75,.16)}
+  .spacer{flex:1}
+
+  @media (max-width:900px){
+    .hero{grid-template-columns:1fr;gap:28px}
+    .diagram{max-width:420px;margin:0 auto;width:100%}
+    .pairCard{grid-template-columns:1fr;justify-items:center;text-align:center;padding:28px 22px}
+    .pairCard .linkrow,.pairCard .actions{justify-content:center}
+    #live{grid-template-columns:1fr;grid-template-rows:minmax(240px,45vh) auto;height:auto;min-height:100%}
+  }
+
+  /* ---------- หน้ามือถือ ---------- */
+  #phone{position:fixed;inset:0;background:#000;overflow:hidden}
+  #pv{width:100%;height:100%;object-fit:cover;background:#000}
+  #phoneStart{
+    position:absolute;inset:0;display:flex;flex-direction:column;gap:16px;align-items:center;justify-content:center;
+    padding:28px;text-align:center;
+    background:
+      radial-gradient(40rem 26rem at 80% 0%, rgba(255,75,75,.2), transparent 60%),
+      radial-gradient(40rem 30rem at 0% 100%, rgba(124,140,255,.25), transparent 60%),
+      var(--bg);
+  }
+  #phoneStart h1{font-family:var(--display);font-size:30px;font-weight:700;margin:6px 0 0;line-height:1.2}
+  #phoneStart p{color:var(--muted);max-width:30ch}
+  #dot{
+    position:absolute;top:calc(18px + env(safe-area-inset-top,0px));right:18px;
+    width:10px;height:10px;border-radius:50%;background:#666;box-shadow:0 0 0 3px rgba(0,0,0,.35)
+  }
+  #dot.on{background:var(--ok);box-shadow:0 0 10px 1px rgba(95,212,160,.8), 0 0 0 3px rgba(0,0,0,.35)}
+  #hud{position:absolute;inset:0;pointer-events:none;
+    padding:calc(14px + env(safe-area-inset-top,0px)) 14px calc(14px + env(safe-area-inset-bottom,0px))}
+  #hud .grid{position:absolute;inset:0;
+    background:
+      linear-gradient(to right,transparent calc(33.33% - .5px),rgba(255,255,255,.22) calc(33.33% - .5px),rgba(255,255,255,.22) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.22) calc(66.66% - .5px),rgba(255,255,255,.22) calc(66.66% + .5px),transparent calc(66.66% + .5px)),
+      linear-gradient(to bottom,transparent calc(33.33% - .5px),rgba(255,255,255,.22) calc(33.33% - .5px),rgba(255,255,255,.22) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.22) calc(66.66% - .5px),rgba(255,255,255,.22) calc(66.66% + .5px),transparent calc(66.66% + .5px));
+  }
+  /* กรอบช่องมองภาพ 4 มุม */
+  #hud .frame{position:absolute;inset:calc(10px + env(safe-area-inset-top,0px)) 10px calc(10px + env(safe-area-inset-bottom,0px)) 10px;pointer-events:none;
+    background:
+      linear-gradient(#fff,#fff) top left/28px 2px no-repeat,
+      linear-gradient(#fff,#fff) top left/2px 28px no-repeat,
+      linear-gradient(#fff,#fff) top right/28px 2px no-repeat,
+      linear-gradient(#fff,#fff) top right/2px 28px no-repeat,
+      linear-gradient(#fff,#fff) bottom left/28px 2px no-repeat,
+      linear-gradient(#fff,#fff) bottom left/2px 28px no-repeat,
+      linear-gradient(#fff,#fff) bottom right/28px 2px no-repeat,
+      linear-gradient(#fff,#fff) bottom right/2px 28px no-repeat;
+    opacity:.8}
+  #hud .top{position:relative;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px}
+  .badge{
+    display:inline-flex;align-items:center;gap:9px;padding:7px 14px;border-radius:999px;
+    background:rgba(8,10,24,.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    font-family:var(--display);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums;
+  }
+  .badge i{width:10px;height:10px;border-radius:50%;background:var(--tally);display:block;box-shadow:0 0 10px var(--tally);animation:pulse 1.4s ease-in-out infinite}
+  .badge.idle i{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  .hstats{
+    background:rgba(8,10,24,.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    padding:8px 14px;border-radius:14px;font-size:12.5px;line-height:1.65;font-variant-numeric:tabular-nums;margin-right:22px;text-align:right
+  }
+  #hud .bottom{
+    position:absolute;left:24px;right:24px;bottom:calc(24px + env(safe-area-inset-bottom,0px));
+    background:rgba(8,10,24,.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border-radius:999px;padding:9px 16px;display:flex;align-items:center;gap:12px;font-size:13px
+  }
+  .meter{flex:1;height:10px;overflow:hidden;background:rgba(255,255,255,.16);
+    -webkit-mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 9px);
+            mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 9px)}
+  .meter div{height:100%;width:0;background:linear-gradient(90deg,var(--ok) 0 70%,var(--amber) 70% 90%,var(--tally) 90%);transition:width .08s}
+  #phoneErr{position:absolute;left:18px;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
+    background:rgba(255,75,75,.94);padding:11px 16px;border-radius:14px;font-size:14px;box-shadow:0 12px 30px -10px rgba(0,0,0,.6)}
+</style>
+</head>
+<body>
+
+<!-- ===== หน้าแรก (คอม) ===== -->
+<section id="home" class="screen">
+  <div class="hero">
+    <div>
+      <span class="tally" aria-hidden="true"></span>
+      <h1>ใช้มือถือเป็นกล้องไลฟ์ IRL</h1>
+      <p class="lead">เปิดหน้านี้บนคอม สแกน QR ด้วยมือถือ แล้วภาพจากกล้องมือถือจะขึ้นบนคอมทันที พร้อมนำไปจับภาพใน OBS ต่อได้</p>
+      <button class="btn" id="startPC">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m15 10 6-3v10l-6-3"/></svg>
+        เริ่มบนคอม
+      </button>
+      <ol class="steps">
+        <li>กด “เริ่มบนคอม” จะมี QR โชว์ขึ้นมา</li>
+        <li>เปิดกล้องมือถือสแกน QR แล้วกดอนุญาตใช้กล้อง</li>
+        <li>ภาพจากมือถือขึ้นบนคอม ควบคุมทุกอย่างได้จากแถบด้านข้าง</li>
+      </ol>
+      <div class="warn" id="httpsWarn" hidden>หน้านี้ไม่ได้เปิดผ่าน HTTPS มือถือจะไม่ยอมให้เปิดกล้อง ให้อัปโหลดไฟล์นี้ขึ้นโฮสต์ที่มี HTTPS (เช่น Netlify, GitHub Pages, Cloudflare Pages) ก่อน</div>
+    </div>
+
+    <div class="glass diagram" aria-hidden="true">
+      <svg viewBox="0 0 420 380" fill="none">
+        <defs>
+          <linearGradient id="scr" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2a3470"/><stop offset="1" stop-color="#1a2149"/>
+          </linearGradient>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#7c8cff" stop-opacity=".55"/><stop offset="1" stop-color="#ff4b4b" stop-opacity=".35"/>
+          </linearGradient>
+        </defs>
+        <!-- คอม -->
+        <rect x="24" y="40" width="288" height="188" rx="16" fill="#0d1230" stroke="rgba(255,255,255,.2)" stroke-width="2"/>
+        <rect x="36" y="52" width="264" height="164" rx="8" fill="url(#scr)"/>
+        <rect x="36" y="52" width="264" height="164" rx="8" fill="url(#sky)"/>
+        <path d="M36 190c40-30 70-14 110-26s70-34 154-6v58H36z" fill="rgba(10,14,40,.55)"/>
+        <circle cx="236" cy="96" r="16" fill="rgba(255,255,255,.85)"/>
+        <rect x="12" y="228" width="312" height="12" rx="6" fill="#0d1230" stroke="rgba(255,255,255,.2)" stroke-width="2"/>
+        <circle cx="52" cy="68" r="5" fill="#ff4b4b"/>
+        <rect x="64" y="64" width="34" height="8" rx="4" fill="rgba(255,255,255,.55)"/>
+        <!-- มือถือ -->
+        <rect x="288" y="150" width="102" height="198" rx="20" fill="#0d1230" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
+        <rect x="298" y="170" width="82" height="158" rx="10" fill="url(#scr)"/>
+        <rect x="298" y="170" width="82" height="158" rx="10" fill="url(#sky)"/>
+        <rect x="324" y="158" width="30" height="5" rx="2.5" fill="rgba(255,255,255,.3)"/>
+        <circle cx="339" cy="249" r="15" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
+        <circle cx="339" cy="249" r="5" fill="rgba(255,255,255,.85)"/>
+        <circle cx="378" cy="338" r="0"/>
+        <!-- เส้นเชื่อม -->
+        <path class="link-anim" d="M288 262C240 290 214 300 180 270" stroke="#ff6b6b" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="180" cy="270" r="7" fill="#ff4b4b"/>
+        <circle cx="180" cy="270" r="13" stroke="#ff4b4b" stroke-opacity=".4" stroke-width="2"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ===== หน้าจับคู่ (คอม) ===== -->
+<section id="pair" class="screen" hidden>
+  <div class="glass pairCard">
+    <div class="qrframe"><div id="qr" aria-label="QR code สำหรับเชื่อมมือถือ"></div></div>
+    <div>
+      <h1>สแกนด้วยมือถือ</h1>
+      <p class="lead">เปิดกล้องมือถือแล้วสแกน QR นี้ จากนั้นกดอนุญาตให้ใช้กล้องและไมค์</p>
+      <div class="linkrow">
+        <input id="linkInput" readonly aria-label="ลิงก์สำหรับมือถือ">
+        <button class="btn ghost" id="copyLink">คัดลอก</button>
+      </div>
+      <div class="status"><span class="pulse" aria-hidden="true"></span><span id="pairStatus">กำลังเตรียมห้อง…</span></div>
+      <div class="actions"><button class="btn ghost" id="cancelPair">ยกเลิก</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== หน้าไลฟ์ (คอม) ===== -->
+<section id="live" hidden>
+  <div id="stage">
+    <video id="mainVideo" autoplay playsinline></video>
+    <div id="fsHint">กด Esc เพื่อออกจากเต็มจอ</div>
+    <div class="overlayMsg" id="lostMsg" hidden>
+      <span class="pulse" aria-hidden="true"></span>
+      <div>มือถือหลุดการเชื่อมต่อ กำลังรอเชื่อมต่อใหม่…</div>
+      <small style="color:var(--muted)">เปิดหน้ามือถือค้างไว้ ระบบจะต่อให้เองอัตโนมัติ</small>
+    </div>
+  </div>
+
+  <aside class="glass side" aria-label="แผงควบคุม">
+    <h2><span class="tally" aria-hidden="true"></span>กล้องมือถือ</h2>
+
+    <div class="stats">
+      <div class="stat">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+        <b id="sRes">–</b><span>ความละเอียด</span>
+      </div>
+      <div class="stat">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/></svg>
+        <b id="sFps">–</b><span>เฟรมต่อวินาที</span>
+      </div>
+      <div class="stat">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="8" width="17" height="9" rx="2"/><path d="M22 11v3"/></svg>
+        <b id="sBat">–</b><span>แบตมือถือ</span>
+      </div>
+      <div class="stat">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <b id="sTime">00:00</b><span>เวลาที่เชื่อมต่อ</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>หน้าจอบนมือถือ</h3>
+      <button class="switch" id="hudSwitch" role="switch" aria-checked="true">
+        <span>แสดงหน้าจอแบบ OBS
+          <small>มือถือจะเห็นกริด ระดับเสียง และสถานะ คนดูเห็นภาพปกติ ไม่มีส่วนนี้</small>
+        </span>
+        <span class="track" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div class="group">
+      <h3>ควบคุม</h3>
+      <button class="act" id="btnFull">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        เต็มจอ (F)
+      </button>
+      <button class="act" id="btnFlip">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 4v4h-4M21 12a9 9 0 0 1-15 6.7L3 16M3 20v-4h4"/></svg>
+        สลับกล้องหน้า/หลัง
+      </button>
+      <button class="switch" id="muteSwitch" role="switch" aria-checked="false">
+        <span>ปิดเสียงมือถือบนคอม</span>
+        <span class="track" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div class="spacer"></div>
+    <button class="act danger" id="btnEnd">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      จบการเชื่อมต่อ
+    </button>
+  </aside>
+</section>
+
+<!-- ===== หน้ามือถือ ===== -->
+<section id="phone" hidden>
+  <video id="pv" autoplay playsinline muted></video>
+  <div id="dot" aria-hidden="true"></div>
+  <div id="hud">
+    <div class="grid"></div>
+    <div class="frame"></div>
+    <div class="top">
+      <div class="badge idle" id="hBadge"><i></i><span id="hState">กำลังเชื่อมต่อ</span><span id="hTime">00:00</span></div>
+      <div class="hstats">
+        <div id="hRes">–</div>
+        <div id="hFps">–</div>
+        <div id="hBit">–</div>
+        <div id="hBat">–</div>
+      </div>
+    </div>
+    <div class="bottom"><span>ไมค์</span><div class="meter"><div id="hMeter"></div></div></div>
+  </div>
+  <div id="phoneErr" hidden></div>
+  <div id="phoneStart" hidden>
+    <span class="tally" aria-hidden="true"></span>
+    <h1>แตะเพื่อเปิดกล้อง</h1>
+    <p>เบราว์เซอร์ต้องการให้กดอนุญาตก่อนถึงจะใช้กล้องและไมค์ได้</p>
+    <button class="btn" id="phoneGo">เปิดกล้อง</button>
+  </div>
+</section>
+
+<script>
+(() => {
+  /* ======================= ตั้งค่า ======================= */
+  // เพิ่ม TURN ตรงนี้ถ้ามือถือใช้เน็ตมือถือแล้วต่อไม่ติด (ดูคำแนะนำในแชท)
+  const TURN_SERVERS = [
+    // { urls: 'turn:YOUR_TURN_HOST:3478', username: 'user', credential: 'pass' }
+  ];
+  const RTC = { iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    ...TURN_SERVERS
+  ]};
+
+  const $ = id => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const camId = params.get('cam');
+  const fmtTime = s => String(Math.floor(s/60)).padStart(2,'0') + ':' + String(Math.floor(s%60)).padStart(2,'0');
+
+  function show(id){
+    ['home','pair','live','phone'].forEach(x => { $(x).hidden = (x !== id); });
+  }
+
+  if (camId) startPhone(camId); else initPC();
+
+  /* ======================= ฝั่งคอม ======================= */
+  function initPC(){
+    show('home');
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') $('httpsWarn').hidden = false;
+    $('startPC').addEventListener('click', startPC);
+  }
+
+  let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode;
+  let hudOn = true;
+
+  function startPC(){
+    show('pair');
+    $('pairStatus').textContent = 'กำลังเตรียมห้อง…';
+    pairCode = 'irlcam-' + Math.random().toString(36).slice(2, 8);
+    peer = new Peer(pairCode, { config: RTC });
+
+    peer.on('open', id => {
+      const url = location.origin + location.pathname + '?cam=' + encodeURIComponent(id);
+      $('linkInput').value = url;
+      $('qr').innerHTML = '';
+      new QRCode($('qr'), { text: url, width: 224, height: 224, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      $('pairStatus').textContent = 'รอมือถือสแกน…';
+    });
+
+    peer.on('connection', c => {
+      dataConn = c;
+      c.on('open', () => {
+        $('pairStatus').textContent = 'มือถือเชื่อมต่อแล้ว กำลังรอภาพ…';
+        c.send({ t:'hud', on: hudOn });
+      });
+      c.on('data', onPhoneData);
+      c.on('close', () => { $('lostMsg').hidden = false; });
+    });
+
+    peer.on('call', call => {
+      mediaCall = call;
+      call.answer();
+      call.on('stream', stream => {
+        const v = $('mainVideo');
+        v.srcObject = stream;
+        v.muted = $('muteSwitch').getAttribute('aria-checked') === 'true';
+        v.play().catch(() => { v.muted = true; setSwitch('muteSwitch', true); v.play(); });
+        $('lostMsg').hidden = true;
+        if (!connectedAt) connectedAt = Date.now();
+        show('live');
+        startPCStats();
+      });
+      call.on('close', () => { $('lostMsg').hidden = false; });
+    });
+
+    peer.on('disconnected', () => { try { peer.reconnect(); } catch(e){} });
+    peer.on('error', e => {
+      if (e.type === 'unavailable-id') { peer.destroy(); startPC(); return; }
+      $('pairStatus').textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (' + e.type + ') ลองรีเฟรชหน้านี้';
+    });
+  }
+
+  function onPhoneData(m){
+    if (!m) return;
+    if (m.t === 'info') {
+      if (typeof m.battery === 'number') $('sBat').textContent = Math.round(m.battery*100) + '%';
+    }
+    if (m.t === 'hud') { hudOn = !!m.on; setSwitch('hudSwitch', hudOn); }
+  }
+
+  function startPCStats(){
+    clearInterval(statTimer);
+    statTimer = setInterval(async () => {
+      const v = $('mainVideo');
+      if (v.videoWidth) $('sRes').textContent = v.videoWidth + '×' + v.videoHeight;
+      if (connectedAt) $('sTime').textContent = fmtTime((Date.now()-connectedAt)/1000);
+      if (mediaCall && mediaCall.peerConnection) {
+        try {
+          const rep = await mediaCall.peerConnection.getStats();
+          rep.forEach(r => {
+            if (r.type === 'inbound-rtp' && r.kind === 'video' && r.framesPerSecond) $('sFps').textContent = Math.round(r.framesPerSecond);
+          });
+        } catch(e){}
+      }
+    }, 1000);
+  }
+
+  function setSwitch(id, on){ $(id).setAttribute('aria-checked', on ? 'true' : 'false'); }
+
+  $('copyLink').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('linkInput').value); $('copyLink').textContent = 'คัดลอกแล้ว'; }
+    catch(e){ $('linkInput').select(); }
+    setTimeout(() => $('copyLink').textContent = 'คัดลอก', 1500);
+  });
+
+  $('cancelPair').addEventListener('click', endPC);
+
+  $('hudSwitch').addEventListener('click', () => {
+    hudOn = !hudOn; setSwitch('hudSwitch', hudOn);
+    if (dataConn && dataConn.open) dataConn.send({ t:'hud', on: hudOn });
+  });
+
+  $('muteSwitch').addEventListener('click', () => {
+    const on = $('muteSwitch').getAttribute('aria-checked') !== 'true';
+    setSwitch('muteSwitch', on);
+    $('mainVideo').muted = on;
+  });
+
+  $('btnFlip').addEventListener('click', () => {
+    if (dataConn && dataConn.open) dataConn.send({ t:'flip' });
+  });
+
+  function toggleFull(){
+    const st = $('stage');
+    if (document.fullscreenElement) { document.exitFullscreen(); return; }
+    (st.requestFullscreen || st.webkitRequestFullscreen).call(st);
+  }
+  $('btnFull').addEventListener('click', toggleFull);
+  $('mainVideo').addEventListener('dblclick', toggleFull);
+  document.addEventListener('keydown', e => {
+    if (!camId && !$('live').hidden && (e.key === 'f' || e.key === 'F') && !e.target.matches('input')) toggleFull();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    const h = $('fsHint');
+    if (document.fullscreenElement) { h.classList.add('show'); setTimeout(() => h.classList.remove('show'), 2500); }
+  });
+
+  $('btnEnd').addEventListener('click', endPC);
+  function endPC(){
+    clearInterval(statTimer);
+    try { if (dataConn) dataConn.send({ t:'end' }); } catch(e){}
+    try { if (mediaCall) mediaCall.close(); } catch(e){}
+    try { if (peer) peer.destroy(); } catch(e){}
+    connectedAt = 0; dataConn = null; mediaCall = null;
+    $('mainVideo').srcObject = null;
+    show('home');
+  }
+
+  /* ======================= ฝั่งมือถือ ======================= */
+  function startPhone(pcId){
+    show('phone');
+    let stream, pPeer, pConn, pCall, facing = 'environment';
+    let hud = true, startedAt = 0, lastBytes = 0, lastT = 0, ended = false;
+    let actx, analyser, wake;
+
+    const err = msg => { $('phoneErr').textContent = msg; $('phoneErr').hidden = !msg; };
+
+    function applyHud(on){
+      hud = on;
+      $('hud').hidden = !on;
+    }
+    applyHud(true);
+
+    async function getMedia(wantAudio){
+      const c = {
+        video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+      };
+      if (wantAudio) c.audio = { echoCancellation: true, noiseSuppression: true };
+      return navigator.mediaDevices.getUserMedia(c);
+    }
+
+    async function begin(){
+      err('');
+      $('phoneStart').hidden = true;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        err('เบราว์เซอร์นี้ไม่รองรับกล้อง หรือหน้านี้ไม่ได้เปิดผ่าน HTTPS');
+        return;
+      }
+      try {
+        stream = await getMedia(true);
+      } catch (e) {
+        if (e.name === 'NotAllowedError') { $('phoneStart').hidden = false; err('ยังไม่ได้อนุญาตกล้อง กดปุ่มแล้วเลือก “อนุญาต”'); }
+        else { err('เปิดกล้องไม่ได้: ' + e.name); $('phoneStart').hidden = false; }
+        return;
+      }
+      $('pv').srcObject = stream;
+      $('pv').style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
+      setupMeter();
+      try { wake = await navigator.wakeLock.request('screen'); } catch(e){}
+      connectToPC();
+    }
+
+    function connectToPC(){
+      if (ended) return;
+      setState('กำลังเชื่อมต่อ', true);
+      if (pPeer && !pPeer.destroyed) pPeer.destroy();
+      pPeer = new Peer({ config: RTC });
+      pPeer.on('open', () => {
+        pConn = pPeer.connect(pcId, { reliable: true });
+        pConn.on('open', () => {
+          sendInfo();
+          pConn.send({ t:'hud', on: hud });
+          pCall = pPeer.call(pcId, stream);
+          pCall.on('close', retry);
+          setTimeout(tuneBitrate, 1200);
+          startedAt = startedAt || Date.now();
+          setState('LIVE', false);
+          $('dot').classList.add('on');
+        });
+        pConn.on('data', onPCData);
+        pConn.on('close', retry);
+        pConn.on('error', retry);
+      });
+      pPeer.on('error', e => {
+        if (e.type === 'peer-unavailable') err('ไม่พบหน้าคอม ตรวจสอบว่ายังเปิดหน้าคอมค้างอยู่');
+        else err('เชื่อมต่อไม่ได้ (' + e.type + ')');
+        retry();
+      });
+    }
+
+    let retryTimer;
+    function retry(){
+      if (ended) return;
+      $('dot').classList.remove('on');
+      setState('หลุด กำลังต่อใหม่', true);
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(connectToPC, 2500);
+    }
+
+    function setState(txt, idle){
+      $('hState').textContent = txt;
+      $('hBadge').classList.toggle('idle', idle);
+    }
+
+    function onPCData(m){
+      if (!m) return;
+      if (m.t === 'hud') applyHud(!!m.on);
+      if (m.t === 'flip') flip();
+      if (m.t === 'end') {
+        ended = true;
+        try { pPeer.destroy(); } catch(e){}
+        stream && stream.getTracks().forEach(t => t.stop());
+        $('pv').srcObject = null;
+        $('hud').hidden = true;
+        $('phoneStart').hidden = false;
+        $('phoneStart').querySelector('h1').textContent = 'จบการเชื่อมต่อแล้ว';
+        $('phoneStart').querySelector('p').textContent = 'คอมปิดการเชื่อมต่อแล้ว ปิดหน้านี้ได้เลย';
+        $('phoneGo').hidden = true;
+      }
+    }
+
+    async function flip(){
+      if (!stream) return;
+      facing = facing === 'environment' ? 'user' : 'environment';
+      const oldV = stream.getVideoTracks()[0];
+      if (oldV) oldV.stop();  // มือถือบางรุ่นเปิดสองกล้องพร้อมกันไม่ได้
+      try {
+        const ns = await getMedia(false);
+        const nv = ns.getVideoTracks()[0];
+        stream.removeTrack(oldV);
+        stream.addTrack(nv);
+        $('pv').srcObject = stream;
+        $('pv').style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
+        if (pCall && pCall.peerConnection) {
+          const sender = pCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender) await sender.replaceTrack(nv);
+        }
+      } catch (e) {
+        err('สลับกล้องไม่ได้: ' + e.name);
+        facing = facing === 'environment' ? 'user' : 'environment';
+      }
+    }
+
+    function tuneBitrate(){
+      try {
+        const s = pCall.peerConnection.getSenders().find(x => x.track && x.track.kind === 'video');
+        if (!s) return;
+        const p = s.getParameters();
+        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+        p.encodings[0].maxBitrate = 4000000;
+        s.setParameters(p).catch(() => {});
+      } catch(e){}
+    }
+
+    async function sendInfo(){
+      try {
+        if (navigator.getBattery && pConn && pConn.open) {
+          const b = await navigator.getBattery();
+          pConn.send({ t:'info', battery: b.level });
+          $('hBat').textContent = 'แบต ' + Math.round(b.level*100) + '%';
+        }
+      } catch(e){}
+    }
+    setInterval(sendInfo, 20000);
+
+    function setupMeter(){
+      try {
+        const at = stream.getAudioTracks()[0];
+        if (!at) return;
+        actx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = actx.createMediaStreamSource(new MediaStream([at]));
+        analyser = actx.createAnalyser(); analyser.fftSize = 512;
+        src.connect(analyser);
+        const buf = new Uint8Array(analyser.fftSize);
+        const loop = () => {
+          if (ended) return;
+          analyser.getByteTimeDomainData(buf);
+          let peak = 0;
+          for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]-128));
+          $('hMeter').style.width = Math.min(100, (peak/128)*140) + '%';
+          requestAnimationFrame(loop);
+        };
+        loop();
+      } catch(e){}
+    }
+
+    setInterval(async () => {
+      if (!startedAt || ended) return;
+      $('hTime').textContent = fmtTime((Date.now()-startedAt)/1000);
+      const vt = stream && stream.getVideoTracks()[0];
+      if (vt) { const s = vt.getSettings(); if (s.width) $('hRes').textContent = s.width + '×' + s.height; }
+      if (pCall && pCall.peerConnection) {
+        try {
+          const rep = await pCall.peerConnection.getStats();
+          rep.forEach(r => {
+            if (r.type === 'outbound-rtp' && r.kind === 'video') {
+              if (r.framesPerSecond) $('hFps').textContent = Math.round(r.framesPerSecond) + ' fps';
+              const now = r.timestamp;
+              if (lastT) $('hBit').textContent = Math.round((r.bytesSent - lastBytes) * 8 / (now - lastT)) + ' kbps';
+              lastBytes = r.bytesSent; lastT = now;
+            }
+          });
+        } catch(e){}
+      }
+    }, 1000);
+
+    // แตะหน้าจอมือถือเพื่อสลับ HUD เอง (ซิงก์กับคอม)
+    $('phone').addEventListener('click', e => {
+      if (!stream || e.target.closest('button')) return;
+      applyHud(!hud);
+      if (pConn && pConn.open) pConn.send({ t:'hud', on: hud });
+    });
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && !ended) {
+        try { wake = await navigator.wakeLock.request('screen'); } catch(e){}
+        if (actx && actx.state === 'suspended') actx.resume();
+      }
+    });
+
+    $('phoneGo').addEventListener('click', begin);
+    begin();   // ลองเปิดกล้องอัตโนมัติทันที ถ้าไม่ผ่านจะโชว์ปุ่มให้กด
+  }
+})();
+</script>
+</body>
+</html>
