@@ -271,6 +271,7 @@
         <li>เปิดกล้องมือถือสแกน QR แล้วกดอนุญาตใช้กล้อง</li>
         <li>ภาพจากมือถือขึ้นบนคอม ควบคุมทุกอย่างได้จากแถบด้านข้าง</li>
       </ol>
+      <small id="buildTag" style="display:block;margin-top:18px;color:var(--muted);opacity:.7"></small>
       <div class="warn" id="httpsWarn" hidden>หน้านี้ไม่ได้เปิดผ่าน HTTPS มือถือจะไม่ยอมให้เปิดกล้อง ให้อัปโหลดไฟล์นี้ขึ้นโฮสต์ที่มี HTTPS (เช่น Netlify, GitHub Pages, Cloudflare Pages) ก่อน</div>
     </div>
 
@@ -409,6 +410,7 @@
     </div>
 
     <div class="spacer"></div>
+    <small id="buildTag2" style="color:var(--muted);opacity:.7"></small>
     <button class="act danger" id="btnEnd">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
       จบการเชื่อมต่อ
@@ -431,6 +433,7 @@
         <div id="hFps">–</div>
         <div id="hBit">–</div>
         <div id="hBat">–</div>
+        <div id="hBuild" style="opacity:.6"></div>
       </div>
     </div>
     <div class="bottom"><span>ไมค์</span><div class="meter"><div id="hMeter"></div></div></div>
@@ -458,6 +461,8 @@
   ]};
 
   const $ = id => document.getElementById(id);
+  const BUILD = 'r5';
+  ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
   const fmtTime = s => String(Math.floor(s/60)).padStart(2,'0') + ':' + String(Math.floor(s%60)).padStart(2,'0');
@@ -485,7 +490,7 @@
     peer = new Peer(pairCode, { config: RTC });
 
     peer.on('open', id => {
-      const url = location.origin + location.pathname + '?cam=' + encodeURIComponent(id);
+      const url = location.origin + location.pathname + '?cam=' + encodeURIComponent(id) + '&v=' + Date.now();
       $('linkInput').value = url;
       $('qr').innerHTML = '';
       new QRCode($('qr'), { text: url, width: 224, height: 224, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
@@ -700,6 +705,12 @@
     return { canvas: obsCanvas || { w: 1920, h: 1080 }, layers };
   }
   const imgSent = new Map();
+  function dataUriToBytes(u){
+    const bin = atob(u.slice(u.indexOf(',') + 1));
+    const a = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    return a;
+  }
   function pushOverlay(force){
     if (!dataConn || !dataConn.open) return;
     const p = overlayPayload();
@@ -715,7 +726,7 @@
         if (imgSent.get(L.id) === L.src) continue;                 // ภาพไม่เปลี่ยน ไม่ต้องส่งซ้ำ
         if (dc && dc.bufferedAmount > 150000) break;               // ช่องยังไม่ว่าง รอรอบหน้า ไม่ให้ภาพกล้องกระตุก
         imgSent.set(L.id, L.src);
-        dataConn.send({ t: 'img', id: L.id, src: L.src });
+        dataConn.send({ t: 'img', id: L.id, buf: dataUriToBytes(L.src) });
       }
     } catch (e) {}
   }
@@ -923,8 +934,16 @@
     function onPCData(m){
       if (!m) return;
       if (m.t === 'hud') applyHud(!!m.on);
-      if (m.t === 'overlay') { ovlData = m.data || null; if (!ovlData) srcById.clear(); scheduleRender(); }
-      if (m.t === 'img' && typeof m.src === 'string') { srcById.set(m.id, m.src); scheduleRender(); }
+      if (m.t === 'overlay') { ovlData = m.data || null; if (!ovlData) { srcById.forEach(u => URL.revokeObjectURL(u)); srcById.clear(); } scheduleRender(); }
+      if (m.t === 'img' && m.buf) {
+        try {
+          const url = URL.createObjectURL(new Blob([m.buf], { type: 'image/png' }));
+          const old = srcById.get(m.id);
+          srcById.set(m.id, url);
+          if (old) setTimeout(() => URL.revokeObjectURL(old), 3000);
+          scheduleRender();
+        } catch (e) {}
+      }
       if (m.t === 'flip') flip();
       if (m.t === 'end') {
         ended = true;
