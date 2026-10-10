@@ -235,6 +235,16 @@
   .meter div{height:100%;width:0;background:linear-gradient(90deg,var(--ok) 0 70%,var(--amber) 70% 90%,var(--tally) 90%);transition:width .08s}
   #phoneErr{position:absolute;left:18px;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
     background:rgba(255,75,75,.94);padding:11px 16px;border-radius:14px;font-size:14px;box-shadow:0 12px 30px -10px rgba(0,0,0,.6)}
+  /* มอนิเตอร์ภาพรวมที่คนดูเห็น (มาจาก OBS) */
+  #mon{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
+  #phone.hasMon #mon{display:block}
+  #phone.hasMon #pv{
+    position:absolute;right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
+    width:26vw;max-width:140px;height:auto;aspect-ratio:3/4;z-index:2;
+    border-radius:14px;border:2px solid rgba(255,255,255,.7);box-shadow:0 12px 30px -8px rgba(0,0,0,.7)
+  }
+  #phone.hasMon #hud{z-index:3}
+  #phone.hasMon #hud .grid,#phone.hasMon #hud .frame{display:none}
 </style>
 </head>
 <body>
@@ -347,11 +357,16 @@
 
     <div class="group">
       <h3>หน้าจอบนมือถือ</h3>
-      <button class="switch" id="hudSwitch" role="switch" aria-checked="true">
+      <button class="switch" id="hudSwitch" role="switch" aria-checked="false">
         <span>แสดงหน้าจอแบบ OBS
-          <small>มือถือจะเห็นกริด ระดับเสียง และสถานะ คนดูเห็นภาพปกติ ไม่มีส่วนนี้</small>
+          <small>มือถือจะเห็นภาพเหมือนที่คนดูไลฟ์เห็นทุกอย่าง (ภาพรวมจาก OBS) ส่วนนี้ส่งให้มือถือคนเดียว ไม่ถูกส่งไปให้คนดู</small>
         </span>
         <span class="track" aria-hidden="true"></span>
+      </button>
+      <small id="monNote" style="color:var(--muted);font-size:12.5px;line-height:1.5;padding-left:2px"></small>
+      <button class="act" id="btnMonSrc">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+        แชร์หน้าต่าง OBS แทน Virtual Camera
       </button>
     </div>
 
@@ -381,6 +396,7 @@
 
 <!-- ===== หน้ามือถือ ===== -->
 <section id="phone" hidden>
+  <video id="mon" autoplay playsinline muted></video>
   <video id="pv" autoplay playsinline muted></video>
   <div id="dot" aria-hidden="true"></div>
   <div id="hud">
@@ -438,7 +454,8 @@
   }
 
   let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode;
-  let hudOn = true;
+  let hudOn = false;                       // true = กำลังส่งภาพมอนิเตอร์ไปที่มือถือ
+  let monStream = null, monCall = null;
 
   function startPC(){
     show('pair');
@@ -458,7 +475,7 @@
       dataConn = c;
       c.on('open', () => {
         $('pairStatus').textContent = 'มือถือเชื่อมต่อแล้ว กำลังรอภาพ…';
-        c.send({ t:'hud', on: hudOn });
+        if (hudOn) startMonitorCall();       // มือถือต่อกลับมา ส่งภาพมอนิเตอร์ให้ใหม่
       });
       c.on('data', onPhoneData);
       c.on('close', () => { $('lostMsg').hidden = false; });
@@ -492,7 +509,6 @@
     if (m.t === 'info') {
       if (typeof m.battery === 'number') $('sBat').textContent = Math.round(m.battery*100) + '%';
     }
-    if (m.t === 'hud') { hudOn = !!m.on; setSwitch('hudSwitch', hudOn); }
   }
 
   function startPCStats(){
@@ -522,10 +538,73 @@
 
   $('cancelPair').addEventListener('click', endPC);
 
-  $('hudSwitch').addEventListener('click', () => {
-    hudOn = !hudOn; setSwitch('hudSwitch', hudOn);
-    if (dataConn && dataConn.open) dataConn.send({ t:'hud', on: hudOn });
-  });
+  /* ----- มอนิเตอร์ OBS ส่งไปมือถือ ----- */
+  const monNote = t => { $('monNote').textContent = t; };
+
+  async function findObsCamera(){
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
+    let devs = await navigator.mediaDevices.enumerateDevices();
+    if (!devs.some(d => d.kind === 'videoinput' && d.label)) {
+      // ต้องขอสิทธิ์กล้องก่อน เบราว์เซอร์ถึงจะบอกชื่ออุปกรณ์
+      try { (await navigator.mediaDevices.getUserMedia({ video:true })).getTracks().forEach(t => t.stop()); }
+      catch(e){ return null; }
+      devs = await navigator.mediaDevices.enumerateDevices();
+    }
+    return devs.find(d => d.kind === 'videoinput' && /obs/i.test(d.label)) || null;
+  }
+
+  async function startMonitor(mode){
+    try {
+      let s = null;
+      if (mode === 'auto') {
+        const d = await findObsCamera();
+        if (d) {
+          s = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: d.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+          monNote('ใช้ OBS Virtual Camera อยู่ (ต้องกด Start Virtual Camera ใน OBS ค้างไว้)');
+        }
+      }
+      if (!s) {
+        s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: false });
+        monNote('กำลังแชร์หน้าต่าง/จอที่เลือก ให้เลือกหน้าต่าง OBS (หรือ Projector) อย่าเลือกหน้าเว็บนี้ ไม่งั้นภาพจะซ้อนกันเป็นอุโมงค์');
+      }
+      monStream = s;
+      hudOn = true; setSwitch('hudSwitch', true);
+      s.getVideoTracks()[0].addEventListener('ended', stopMonitor);
+      startMonitorCall();
+    } catch (e) {
+      hudOn = false; setSwitch('hudSwitch', false);
+      monNote('เปิดภาพจาก OBS ไม่ได้ (' + (e.name || 'error') + ') ตรวจว่ากด Start Virtual Camera ใน OBS แล้ว หรือกด “แชร์หน้าต่าง OBS” แทน');
+    }
+  }
+
+  function startMonitorCall(){
+    if (!monStream || !dataConn || !dataConn.open) return;
+    try { if (monCall) monCall.close(); } catch(e){}
+    monCall = peer.call(dataConn.peer, monStream);
+    const mc = monCall;
+    setTimeout(() => {
+      try {
+        const sd = mc.peerConnection.getSenders().find(x => x.track && x.track.kind === 'video');
+        const p = sd.getParameters();
+        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+        p.encodings[0].maxBitrate = 1500000;   // พอสำหรับดูบนมือถือ ไม่กินเน็ตมือถือมาก
+        sd.setParameters(p).catch(() => {});
+      } catch(e){}
+    }, 1200);
+  }
+
+  function stopMonitor(){
+    hudOn = false; setSwitch('hudSwitch', false);
+    try { if (monCall) monCall.close(); } catch(e){}
+    if (monStream) monStream.getTracks().forEach(t => t.stop());
+    monStream = null; monCall = null;
+    try { if (dataConn && dataConn.open) dataConn.send({ t:'monitor', on:false }); } catch(e){}
+    monNote('');
+  }
+
+  $('hudSwitch').addEventListener('click', () => { if (hudOn) stopMonitor(); else startMonitor('auto'); });
+  $('btnMonSrc').addEventListener('click', () => { if (hudOn) stopMonitor(); startMonitor('screen'); });
 
   $('muteSwitch').addEventListener('click', () => {
     const on = $('muteSwitch').getAttribute('aria-checked') !== 'true';
@@ -559,6 +638,8 @@
     try { if (mediaCall) mediaCall.close(); } catch(e){}
     try { if (peer) peer.destroy(); } catch(e){}
     connectedAt = 0; dataConn = null; mediaCall = null;
+    if (monStream) monStream.getTracks().forEach(t => t.stop());
+    monStream = null; monCall = null; hudOn = false; setSwitch('hudSwitch', false); monNote('');
     $('mainVideo').srcObject = null;
     show('home');
   }
@@ -572,11 +653,17 @@
 
     const err = msg => { $('phoneErr').textContent = msg; $('phoneErr').hidden = !msg; };
 
+    let monStream = null, monView = true;   // monStream = ภาพที่คนดูเห็น (ส่งมาจากคอม)
+
     function applyHud(on){
       hud = on;
       $('hud').hidden = !on;
     }
     applyHud(true);
+
+    function renderView(){
+      $('phone').classList.toggle('hasMon', !!monStream && monView);
+    }
 
     async function getMedia(wantAudio){
       const c = {
@@ -612,11 +699,19 @@
       setState('กำลังเชื่อมต่อ', true);
       if (pPeer && !pPeer.destroyed) pPeer.destroy();
       pPeer = new Peer({ config: RTC });
+      pPeer.on('call', call => {            // คอมส่งภาพมอนิเตอร์ (สิ่งที่คนดูเห็น) มาให้
+        call.answer();
+        call.on('stream', s => {
+          monStream = s; monView = true;
+          $('mon').srcObject = s; $('mon').play().catch(() => {});
+          renderView();
+        });
+        call.on('close', () => { monStream = null; $('mon').srcObject = null; renderView(); });
+      });
       pPeer.on('open', () => {
         pConn = pPeer.connect(pcId, { reliable: true });
         pConn.on('open', () => {
           sendInfo();
-          pConn.send({ t:'hud', on: hud });
           pCall = pPeer.call(pcId, stream);
           pCall.on('close', retry);
           setTimeout(tuneBitrate, 1200);
@@ -651,7 +746,7 @@
 
     function onPCData(m){
       if (!m) return;
-      if (m.t === 'hud') applyHud(!!m.on);
+      if (m.t === 'monitor' && !m.on) { monStream = null; $('mon').srcObject = null; renderView(); }
       if (m.t === 'flip') flip();
       if (m.t === 'end') {
         ended = true;
@@ -751,11 +846,11 @@
       }
     }, 1000);
 
-    // แตะหน้าจอมือถือเพื่อสลับ HUD เอง (ซิงก์กับคอม)
+    // แตะหน้าจอมือถือ: ถ้ามีภาพมอนิเตอร์ ให้สลับดู "ภาพที่คนดูเห็น" / "ภาพกล้องเรา", ถ้ายังไม่มีให้สลับ HUD
     $('phone').addEventListener('click', e => {
       if (!stream || e.target.closest('button')) return;
-      applyHud(!hud);
-      if (pConn && pConn.open) pConn.send({ t:'hud', on: hud });
+      if (monStream) { monView = !monView; renderView(); }
+      else applyHud(!hud);
     });
 
     document.addEventListener('visibilitychange', async () => {
