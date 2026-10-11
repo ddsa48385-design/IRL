@@ -461,7 +461,7 @@
   ]};
 
   const $ = id => document.getElementById(id);
-  const BUILD = 'r5';
+  const BUILD = 'r6';
   ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
@@ -482,6 +482,7 @@
 
   let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode;
   let hudOn = true;
+  let ovlConn = null;                      // การเชื่อมต่อแยกสำหรับโอเวอร์เลย์
 
   function startPC(){
     show('pair');
@@ -502,7 +503,15 @@
       c.on('open', () => {
         $('pairStatus').textContent = 'มือถือเชื่อมต่อแล้ว กำลังรอภาพ…';
         c.send({ t:'hud', on: hudOn });
-        pushOverlay(true);
+        // โอเวอร์เลย์ใช้การเชื่อมต่อแยกต่างหาก และรอให้ภาพกล้องนิ่งก่อน ถ้าส่วนนี้มีปัญหาภาพกล้องจะไม่โดนลากไปด้วย
+        setTimeout(() => {
+          if (dataConn !== c || !c.open) return;
+          try { if (ovlConn) ovlConn.close(); } catch (e) {}
+          ovlConn = peer.connect(c.peer, { label: 'overlay', reliable: true });
+          ovlConn.on('open', () => pushOverlay(true));
+          ovlConn.on('close', () => { ovlConn = null; });
+          ovlConn.on('error', () => {});
+        }, 4000);
       });
       c.on('data', onPhoneData);
       c.on('close', () => { $('lostMsg').hidden = false; });
@@ -655,7 +664,7 @@
     if (kind === 'browser_source' || kind === 'image_source') {
       // ขอภาพของแหล่งนั้นจาก OBS โดยตรง (พื้นหลังโปร่งใส) ไม่ต้องฝังเว็บในมือถือ
       const layer = { id, type: 'img', src: '', x, y, w, h };
-      if (!(hudOn && dataConn && dataConn.open)) return layer;   // มือถือยังไม่พร้อมหรือปิดสวิตช์ ไม่ต้องดึงภาพ ประหยัดเครื่อง
+      if (!(hudOn && ovlConn && ovlConn.open)) return layer;   // มือถือยังไม่พร้อมหรือปิดสวิตช์ ไม่ต้องดึงภาพ ประหยัดเครื่อง
       const live = kind === 'browser_source';                    // Browser Source ขยับได้ ดึงใหม่ทุกรอบ ส่วนรูปนิ่งดึงครั้งเดียว
       let src = live ? null : obsShotCache.get(it.sourceName);
       if (!src) {
@@ -712,21 +721,23 @@
     return a;
   }
   function pushOverlay(force){
-    if (!dataConn || !dataConn.open) return;
+    if (!ovlConn || !ovlConn.open) return;
     const p = overlayPayload();
     const layout = p ? { canvas: p.canvas, layers: p.layers.map(L => L.type === 'img' ? { id: L.id, type: 'img', x: L.x, y: L.y, w: L.w, h: L.h } : L) } : null;
     const lj = JSON.stringify(layout);
     if (force) imgSent.clear();
     try {
-      if (force || lj !== lastOvlJson) { lastOvlJson = lj; dataConn.send({ t: 'overlay', data: layout }); }
+      if (force || lj !== lastOvlJson) { lastOvlJson = lj; ovlConn.send({ t: 'overlay', data: layout }); }
       if (!p) { imgSent.clear(); return; }
-      const dc = dataConn.dataChannel;
+      const dc = ovlConn.dataChannel;
       for (const L of p.layers) {
         if (L.type !== 'img' || !L.src) continue;
         if (imgSent.get(L.id) === L.src) continue;                 // ภาพไม่เปลี่ยน ไม่ต้องส่งซ้ำ
         if (dc && dc.bufferedAmount > 150000) break;               // ช่องยังไม่ว่าง รอรอบหน้า ไม่ให้ภาพกล้องกระตุก
         imgSent.set(L.id, L.src);
-        dataConn.send({ t: 'img', id: L.id, buf: dataUriToBytes(L.src) });
+        const bytes = dataUriToBytes(L.src);
+        if (bytes.length > 200000) continue;                       // ภาพใหญ่เกินไป ข้ามไป ไม่เสี่ยงให้การเชื่อมต่อสะดุด
+        ovlConn.send({ t: 'img', id: L.id, buf: bytes });
       }
     } catch (e) {}
   }
@@ -779,6 +790,8 @@
     try { if (mediaCall) mediaCall.close(); } catch(e){}
     try { if (peer) peer.destroy(); } catch(e){}
     obsDisconnect(true);
+    try { if (ovlConn) ovlConn.close(); } catch (e) {}
+    ovlConn = null;
     connectedAt = 0; dataConn = null; mediaCall = null;
     $('mainVideo').srcObject = null;
     show('home');
@@ -910,7 +923,9 @@
         pConn.on('close', retry);
         pConn.on('error', retry);
       });
+      pPeer.on('connection', c => { if (c.label === 'overlay') c.on('data', onPCData); });
       pPeer.on('error', e => {
+        if (e.type === 'webrtc') return;      // ปัญหาของช่องโอเวอร์เลย์ ไม่ต้องรีเซ็ตกล้อง
         if (e.type === 'peer-unavailable') err('ไม่พบหน้าคอม ตรวจสอบว่ายังเปิดหน้าคอมค้างอยู่');
         else err('เชื่อมต่อไม่ได้ (' + e.type + ')');
         retry();
