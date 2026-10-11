@@ -243,6 +243,12 @@
   #vmeter div{width:100%;height:0;background:linear-gradient(0deg,var(--ok) 0 70%,var(--amber) 70% 90%,var(--tally) 90%);transition:height .08s}
   #phoneErr{position:absolute;left:18px;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
     background:rgba(255,75,75,.94);padding:11px 16px;border-radius:14px;font-size:14px;box-shadow:0 12px 30px -10px rgba(0,0,0,.6)}
+  .sel{
+    width:100%;min-width:0;background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:10px 12px;font:inherit;font-size:13.5px
+  }
+  .sel option{background:#1b2342;color:#f2f4fb}
+  .pair2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .obsbox{display:grid;gap:10px}
   .obsrow{display:grid;grid-template-columns:84px 1fr;gap:8px}
   .obsrow input{
@@ -421,6 +427,28 @@
       </button>
     </div>
 
+    <div class="group">
+      <h3>เสียงแจ้งเตือนไปมือถือ</h3>
+      <select class="sel" id="alertDev" aria-label="อุปกรณ์เสียงที่รับเสียงแจ้งเตือนจาก OBS">
+        <option value="">กด “โหลดรายการ” ก่อน</option>
+      </select>
+      <div class="pair2">
+        <button class="act" id="btnAlertList">โหลดรายการ</button>
+        <button class="act" id="btnAlert"><span id="alertBtnTxt">ส่งเสียง</span></button>
+      </div>
+      <small id="alertNote" class="obsnote"></small>
+      <details class="obshelp">
+        <summary>วิธีตั้งค่า (ทำครั้งเดียว)</summary>
+        <ol>
+          <li>ติดตั้ง VB-CABLE (ฟรี จาก vb-audio.com/Cable) แล้วรีสตาร์ทคอม</li>
+          <li>ใน OBS ไปที่ Settings &gt; Audio &gt; Advanced แล้วตั้ง Monitoring Device เป็น “CABLE Input”</li>
+          <li>เปิด Browser Source ที่มีเสียงแจ้งเตือน ติ๊ก “Control audio via OBS” แล้วในช่อง Audio Mixer กดฟันเฟืองเลือก Advanced Audio Properties ตั้งแหล่งนั้นเป็น “Monitor and Output”</li>
+          <li>กลับมาที่หน้านี้ กดโหลดรายการ เลือก “CABLE Output” แล้วกดส่งเสียง</li>
+          <li>ที่มือถือใส่หูฟัง ไม่งั้นเสียงจากลำโพงจะเข้าไมค์มือถือแล้วซ้อนในไลฟ์</li>
+        </ol>
+      </details>
+    </div>
+
     <div class="spacer"></div>
     <small id="buildTag2" style="color:var(--muted);opacity:.7"></small>
     <button class="act danger" id="btnEnd">
@@ -450,6 +478,7 @@
     </div>
     <div id="vmeter" aria-hidden="true"><div id="hMeter"></div></div>
   </div>
+  <audio id="alertAudio" autoplay playsinline></audio>
   <div id="phoneErr" hidden></div>
   <div id="phoneStart" hidden>
     <span class="tally" aria-hidden="true"></span>
@@ -473,7 +502,7 @@
   ]};
 
   const $ = id => document.getElementById(id);
-  const BUILD = 'r7';
+  const BUILD = 'r8';
   ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
@@ -496,6 +525,7 @@
   let hudOn = true;
   let meterOn = true;
   let ovlConn = null;                      // การเชื่อมต่อแยกสำหรับโอเวอร์เลย์
+  let alertStream = null, alertCall = null; // เสียงแจ้งเตือนจาก OBS ที่ส่งไปให้มือถือฟัง
 
   function startPC(){
     show('pair');
@@ -517,6 +547,7 @@
         $('pairStatus').textContent = 'มือถือเชื่อมต่อแล้ว กำลังรอภาพ…';
         c.send({ t:'hud', on: hudOn });
         c.send({ t:'meter', on: meterOn });
+        if (alertStream) setTimeout(startAlertCall, 2500);   // มือถือต่อกลับมา ส่งเสียงแจ้งเตือนให้ใหม่
         // โอเวอร์เลย์ใช้การเชื่อมต่อแยกต่างหาก และรอให้ภาพกล้องนิ่งก่อน ถ้าส่วนนี้มีปัญหาภาพกล้องจะไม่โดนลากไปด้วย
         setTimeout(() => {
           if (dataConn !== c || !c.open) return;
@@ -588,6 +619,58 @@
   });
 
   $('cancelPair').addEventListener('click', endPC);
+
+  /* ----- ส่งเสียงแจ้งเตือน (โดเนท ฯลฯ) จาก OBS ไปให้มือถือฟัง ผ่านสายเสียงเสมือน ----- */
+  const alertNote = t => { $('alertNote').textContent = t; };
+
+  async function listAudioInputs(){
+    try {
+      let devs = await navigator.mediaDevices.enumerateDevices();
+      if (!devs.some(d => d.kind === 'audioinput' && d.label)) {
+        (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(t => t.stop());
+        devs = await navigator.mediaDevices.enumerateDevices();
+      }
+      const sel = $('alertDev'); sel.innerHTML = '';
+      devs.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications').forEach(d => {
+        const o = document.createElement('option');
+        o.value = d.deviceId; o.textContent = d.label || 'อุปกรณ์เสียง';
+        sel.appendChild(o);
+      });
+      const cable = [...sel.options].find(o => /cable output|vb-audio/i.test(o.textContent));
+      if (cable) { sel.value = cable.value; alertNote('เจอ CABLE Output แล้ว กด “ส่งเสียง” ได้เลย'); }
+      else alertNote('ไม่เจอ CABLE Output ตรวจว่าติดตั้ง VB-CABLE แล้วและรีสตาร์ทคอมแล้ว');
+    } catch (e) { alertNote('อ่านรายการอุปกรณ์เสียงไม่ได้ (' + (e.name || 'error') + ') ต้องอนุญาตไมค์ให้หน้าเว็บก่อน'); }
+  }
+
+  function startAlertCall(){
+    if (!alertStream || !dataConn || !dataConn.open) return;
+    try { if (alertCall) alertCall.close(); } catch (e) {}
+    alertCall = peer.call(dataConn.peer, alertStream);
+  }
+
+  async function startAlert(){
+    const id = $('alertDev').value;
+    if (!id) { alertNote('กด “โหลดรายการ” แล้วเลือกอุปกรณ์ก่อน'); return; }
+    try {
+      alertStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: id }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (e) { alertNote('เปิดอุปกรณ์เสียงไม่ได้ (' + (e.name || 'error') + ')'); return; }
+    $('alertBtnTxt').textContent = 'หยุดส่ง';
+    alertNote('กำลังส่งเสียงแจ้งเตือนไปมือถือ (ให้มือถือใส่หูฟัง)');
+    startAlertCall();
+  }
+
+  function stopAlert(silent){
+    try { if (alertCall) alertCall.close(); } catch (e) {}
+    if (alertStream) alertStream.getTracks().forEach(t => t.stop());
+    alertStream = null; alertCall = null;
+    $('alertBtnTxt').textContent = 'ส่งเสียง';
+    if (!silent) alertNote('');
+  }
+
+  $('btnAlertList').addEventListener('click', listAudioInputs);
+  $('btnAlert').addEventListener('click', () => { if (alertStream) stopAlert(false); else startAlert(); });
 
   /* ----- ดึงโอเวอร์เลย์จาก OBS (obs-websocket v5) แล้วส่งให้มือถือวางทับภาพกล้อง ----- */
   let obsWs = null, obsPoll = null, obsSeq = 0, obsBusy = false;
@@ -811,6 +894,7 @@
     obsDisconnect(true);
     try { if (ovlConn) ovlConn.close(); } catch (e) {}
     ovlConn = null;
+    stopAlert(true);
     connectedAt = 0; dataConn = null; mediaCall = null;
     $('mainVideo').srcObject = null;
     show('home');
@@ -943,6 +1027,15 @@
         pConn.on('error', retry);
       });
       pPeer.on('connection', c => { if (c.label === 'overlay') c.on('data', onPCData); });
+      pPeer.on('call', call => {            // คอมส่งเสียงแจ้งเตือนจาก OBS มาให้ฟัง
+        call.answer();
+        call.on('stream', s => {
+          const a = $('alertAudio');
+          a.srcObject = s;
+          a.play().catch(() => { err('แตะหน้าจอหนึ่งครั้งเพื่อเปิดเสียงแจ้งเตือน'); });
+        });
+        call.on('close', () => { $('alertAudio').srcObject = null; });
+      });
       pPeer.on('error', e => {
         if (e.type === 'webrtc') return;      // ปัญหาของช่องโอเวอร์เลย์ ไม่ต้องรีเซ็ตกล้อง
         if (e.type === 'peer-unavailable') err('ไม่พบหน้าคอม ตรวจสอบว่ายังเปิดหน้าคอมค้างอยู่');
@@ -1081,6 +1174,7 @@
     // แตะหน้าจอมือถือเพื่อสลับ HUD เอง (ซิงก์กับคอม)
     $('phone').addEventListener('click', e => {
       if (!stream || e.target.closest('button')) return;
+      const aa = $('alertAudio'); if (aa.srcObject && aa.paused) aa.play().then(() => err('')).catch(() => {});
       applyHud(!hud);
       if (pConn && pConn.open) pConn.send({ t:'hud', on: hud });
     });
