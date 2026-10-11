@@ -233,6 +233,14 @@
     -webkit-mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 9px);
             mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 9px)}
   .meter div{height:100%;width:0;background:linear-gradient(90deg,var(--ok) 0 70%,var(--amber) 70% 90%,var(--tally) 90%);transition:width .08s}
+  #vmeter{
+    position:absolute;left:calc(14px + env(safe-area-inset-left,0px));top:50%;transform:translateY(-50%);
+    width:6px;height:34%;border-radius:3px;overflow:hidden;display:flex;align-items:flex-end;
+    background:rgba(255,255,255,.18);
+    -webkit-mask:repeating-linear-gradient(0deg,#000 0 5px,transparent 5px 7px);
+            mask:repeating-linear-gradient(0deg,#000 0 5px,transparent 5px 7px);
+  }
+  #vmeter div{width:100%;height:0;background:linear-gradient(0deg,var(--ok) 0 70%,var(--amber) 70% 90%,var(--tally) 90%);transition:height .08s}
   #phoneErr{position:absolute;left:18px;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));
     background:rgba(255,75,75,.94);padding:11px 16px;border-radius:14px;font-size:14px;box-shadow:0 12px 30px -10px rgba(0,0,0,.6)}
   .obsbox{display:grid;gap:10px}
@@ -407,6 +415,10 @@
         <span>ปิดเสียงมือถือบนคอม</span>
         <span class="track" aria-hidden="true"></span>
       </button>
+      <button class="switch" id="meterSwitch" role="switch" aria-checked="true">
+        <span>แสดงแถบระดับไมค์บนมือถือ</span>
+        <span class="track" aria-hidden="true"></span>
+      </button>
     </div>
 
     <div class="spacer"></div>
@@ -436,7 +448,7 @@
         <div id="hBuild" style="opacity:.6"></div>
       </div>
     </div>
-    <div class="bottom"><span>ไมค์</span><div class="meter"><div id="hMeter"></div></div></div>
+    <div id="vmeter" aria-hidden="true"><div id="hMeter"></div></div>
   </div>
   <div id="phoneErr" hidden></div>
   <div id="phoneStart" hidden>
@@ -461,7 +473,7 @@
   ]};
 
   const $ = id => document.getElementById(id);
-  const BUILD = 'r6';
+  const BUILD = 'r7';
   ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
@@ -482,6 +494,7 @@
 
   let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode;
   let hudOn = true;
+  let meterOn = true;
   let ovlConn = null;                      // การเชื่อมต่อแยกสำหรับโอเวอร์เลย์
 
   function startPC(){
@@ -503,6 +516,7 @@
       c.on('open', () => {
         $('pairStatus').textContent = 'มือถือเชื่อมต่อแล้ว กำลังรอภาพ…';
         c.send({ t:'hud', on: hudOn });
+        c.send({ t:'meter', on: meterOn });
         // โอเวอร์เลย์ใช้การเชื่อมต่อแยกต่างหาก และรอให้ภาพกล้องนิ่งก่อน ถ้าส่วนนี้มีปัญหาภาพกล้องจะไม่โดนลากไปด้วย
         setTimeout(() => {
           if (dataConn !== c || !c.open) return;
@@ -764,6 +778,11 @@
     $('mainVideo').muted = on;
   });
 
+  $('meterSwitch').addEventListener('click', () => {
+    meterOn = !meterOn; setSwitch('meterSwitch', meterOn);
+    if (dataConn && dataConn.open) dataConn.send({ t:'meter', on: meterOn });
+  });
+
   $('btnFlip').addEventListener('click', () => {
     if (dataConn && dataConn.open) dataConn.send({ t:'flip' });
   });
@@ -949,6 +968,7 @@
     function onPCData(m){
       if (!m) return;
       if (m.t === 'hud') applyHud(!!m.on);
+      if (m.t === 'meter') $('vmeter').hidden = !m.on;
       if (m.t === 'overlay') { ovlData = m.data || null; if (!ovlData) { srcById.forEach(u => URL.revokeObjectURL(u)); srcById.clear(); } scheduleRender(); }
       if (m.t === 'img' && m.buf) {
         try {
@@ -1031,7 +1051,7 @@
           analyser.getByteTimeDomainData(buf);
           let peak = 0;
           for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]-128));
-          $('hMeter').style.width = Math.min(100, (peak/128)*140) + '%';
+          $('hMeter').style.height = Math.min(100, (peak/128)*140) + '%';
           requestAnimationFrame(loop);
         };
         loop();
