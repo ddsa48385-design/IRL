@@ -274,15 +274,12 @@
     opacity:.65;transition:opacity .2s,background .2s}
   .pbtn:active{opacity:1}
   .pbtn.on{background:var(--amber);color:#1a1300;opacity:1}
-  /* แคปซูลควบคุมบนมือถือ: รวมทุกปุ่มไว้ก้อนเดียว */
-  #phoneCtl{gap:4px;padding:5px;border-radius:26px;background:rgba(8,10,24,.42);
-    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.1)}
-  #phoneCtl .pbtn{width:36px;height:36px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
-  #phoneCtl .pbtn .ico{width:19px;height:19px}
-  .pbtn.cam{font-size:14px;font-weight:700;font-family:inherit;opacity:.7}
-  .pbtn.cam.cur{background:#fff!important;color:#111;opacity:1}
-  .camsep{height:1px;margin:2px 8px;background:rgba(255,255,255,.14)}
-  .camsep:empty:only-child{display:none}
+  /* ตัวเลือกเลนส์: อยู่ฝั่งซ้าย แยกจากปุ่มสลับกล้อง/แฟลช ย่อ-ขยายได้ */
+  #lensBox{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));top:50%;transform:translateY(-50%);
+    display:flex;flex-direction:column;gap:10px;pointer-events:none}
+  #lensBox[hidden]{display:none}
+  .pbtn.cam{font-size:15px;font-weight:700;font-family:inherit}
+  .pbtn.cam.cur{background:#fff;color:#111;opacity:1}
 
   /* แผงกล้องบนคอม */
   .pills{display:flex;gap:6px;flex-wrap:wrap}
@@ -297,6 +294,7 @@
   details.adjdet summary::after{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
     transform:rotate(45deg) translateY(-2px);transition:transform .2s}
   details.adjdet[open] summary::after{transform:rotate(-135deg)}
+  details.adjdet details.adjdet{background:rgba(255,255,255,.04)}
   .adjbody{padding:2px 16px 14px;display:grid;gap:14px}
   .adj{display:grid;gap:6px}
   .adj label{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
@@ -476,8 +474,9 @@
       </button>
     </div>
 
-    <div class="group" id="camGroup" style="display:none">
-      <h3>กล้อง / เลนส์มือถือ</h3>
+    <details class="adjdet" id="camGroup" style="display:none">
+      <summary>กล้อง / เลนส์มือถือ <span id="camCur" style="color:var(--muted);font-size:12.5px;margin-left:auto;margin-right:10px"></span></summary>
+      <div class="adjbody">
       <div class="pills" id="camPills"></div>
       <details class="adjdet" id="adjDet" style="display:none">
         <summary>ปรับแต่งภาพ <span id="adjCount" style="color:var(--muted);font-size:12.5px;margin-left:auto;margin-right:10px"></span></summary>
@@ -486,7 +485,8 @@
           <button class="adjreset" id="btnAdjReset">รีเซ็ตเป็นอัตโนมัติ</button>
         </div>
       </details>
-    </div>
+      </div>
+    </details>
 
     <div class="group">
       <h3>เสียงแจ้งเตือนไปมือถือ</h3>
@@ -539,7 +539,6 @@
     </div>
     <div id="vmeter" aria-hidden="true"><div id="hMeter"></div></div>
     <div id="phoneCtl">
-      <div id="camChips" style="display:contents"></div>
       <button class="pbtn" id="pbFlip" aria-label="สลับกล้อง">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 4v4h-4M21 12a9 9 0 0 1-15 6.7L3 16M3 20v-4h4"/></svg>
       </button>
@@ -547,6 +546,7 @@
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
       </button>
     </div>
+    <div id="lensBox"></div>
   </div>
   <audio id="alertAudio" autoplay playsinline></audio>
   <div id="phoneErr" hidden></div>
@@ -687,6 +687,8 @@
     $('camGroup').style.display = (cams.length > 1 || keys.length) ? '' : 'none';
 
     // รายการกล้อง (ปุ่มเลือก)
+    const cc = cams.find(c => c.id === m.cur);
+    $('camCur').textContent = cc ? 'กล้อง ' + cc.n : '';
     const pills = $('camPills');
     pills.style.display = cams.length > 1 ? '' : 'none';
     const cs = cams.map(c => c.id).join('|') + '|' + m.cur;
@@ -1161,19 +1163,33 @@
       });
       return out;
     }
+    let lensOpen = false, lensTimer;
     function renderChips(){
-      const box = $('camChips'), cur = curId();
+      const box = $('lensBox');
       box.textContent = '';
-      if (cams.length < 2) return;
-      cams.forEach(c => {
+      if (cams.length < 2) { box.style.display = 'none'; return; }
+      box.style.display = '';
+      const cur = cams.find(c => c.id === curId()) || cams[0];
+      const mk = (c, isCur) => {
         const b = document.createElement('button');
-        b.className = 'pbtn cam' + (c.id === cur ? ' cur' : '');
+        b.className = 'pbtn cam' + (isCur ? ' cur' : '');
         b.textContent = c.n;
         b.setAttribute('aria-label', 'กล้อง ' + c.n);
-        b.addEventListener('click', () => { if (c.id !== curId()) swapTrack(c.id); });
+        return b;
+      };
+      const main = mk(cur, true);
+      main.setAttribute('aria-expanded', lensOpen ? 'true' : 'false');
+      main.addEventListener('click', () => {
+        lensOpen = !lensOpen; renderChips();
+        clearTimeout(lensTimer);
+        if (lensOpen) lensTimer = setTimeout(() => { lensOpen = false; renderChips(); }, 4000);
+      });
+      box.appendChild(main);
+      if (lensOpen) cams.filter(c => c.id !== cur.id).forEach(c => {
+        const b = mk(c, false);
+        b.addEventListener('click', () => { lensOpen = false; clearTimeout(lensTimer); swapTrack(c.id); });
         box.appendChild(b);
       });
-      const sep = document.createElement('div'); sep.className = 'camsep'; box.appendChild(sep);
     }
     function syncCaps(){
       const ok = torchSupported();
@@ -1326,7 +1342,7 @@
       if (!m) return;
       if (m.t === 'hud') applyHud(!!m.on);
       if (m.t === 'meter') $('vmeter').hidden = !m.on;
-      if (m.t === 'ctl') $('phoneCtl').hidden = !m.on;
+      if (m.t === 'ctl') { $('phoneCtl').hidden = !m.on; $('lensBox').hidden = !m.on; }
       if (m.t === 'torch') setTorch(!!m.on);
       if (m.t === 'overlay') { ovlData = m.data || null; if (!ovlData) { srcById.forEach(u => URL.revokeObjectURL(u)); srcById.clear(); } scheduleRender(); }
       if (m.t === 'img' && m.buf) {
