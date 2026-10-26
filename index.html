@@ -274,6 +274,13 @@
     opacity:.65;transition:opacity .2s,background .2s}
   .pbtn:active{opacity:1}
   .pbtn.on{background:var(--amber);color:#1a1300;opacity:1}
+  .pbtn.cam{font-size:15px;font-weight:700;font-family:inherit}
+  .pbtn.cam.cur{background:#fff;color:#111;opacity:1}
+  .adjbox{display:grid;gap:12px}
+  .adj{display:grid;gap:4px}
+  .adj label{display:flex;justify-content:space-between;font-size:13px}
+  .adj label b{font-weight:600;color:var(--amber)}
+  .adj input[type=range]{width:100%;accent-color:var(--amber)}
 </style>
 </head>
 <body>
@@ -444,6 +451,13 @@
       </button>
     </div>
 
+    <div class="group" id="camGroup" style="display:none">
+      <h3>กล้อง / เลนส์มือถือ</h3>
+      <select class="sel" id="camSel" aria-label="เลือกกล้องของมือถือ"></select>
+      <div class="adjbox" id="adjBox"></div>
+      <button class="act" id="btnAdjReset" style="display:none">รีเซ็ตค่าเป็นอัตโนมัติ</button>
+    </div>
+
     <div class="group">
       <h3>เสียงแจ้งเตือนไปมือถือ</h3>
       <select class="sel" id="alertDev" aria-label="อุปกรณ์เสียงที่รับเสียงแจ้งเตือนจาก OBS">
@@ -495,6 +509,7 @@
     </div>
     <div id="vmeter" aria-hidden="true"><div id="hMeter"></div></div>
     <div id="phoneCtl">
+      <div id="camChips" style="display:contents"></div>
       <button class="pbtn" id="pbFlip" aria-label="สลับกล้อง">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 4v4h-4M21 12a9 9 0 0 1-15 6.7L3 16M3 20v-4h4"/></svg>
       </button>
@@ -623,6 +638,67 @@
       s.disabled = !m.torch; s.style.opacity = m.torch ? '' : '.5';
       $('torchNote').textContent = m.torch ? 'เปิด/ปิดไฟ LED ของมือถือ' : 'กล้องนี้ไม่มีแฟลช (กล้องหน้า หรือเบราว์เซอร์ไม่รองรับ เช่น iPhone)';
       setSwitch('torchSwitch', !!m.torchOn);
+      renderCam(m);
+    }
+  }
+
+  /* ----- เลือกกล้อง/ปรับค่า เฉพาะที่มือถือเครื่องนั้นรองรับ ----- */
+  const ADJ_LABEL = { zoom:'ซูม', exposureCompensation:'ความสว่าง (EV)', colorTemperature:'อุณหภูมิสี (K)',
+    iso:'ISO', focusDistance:'โฟกัสมือ', brightness:'Brightness', contrast:'Contrast', saturation:'Saturation', sharpness:'Sharpness' };
+  let camSig = '', adjSig = '';
+  function fmtAdj(k, v){
+    v = +v;
+    if (k === 'zoom') return v.toFixed(1) + '×';
+    if (k === 'exposureCompensation') return (v > 0 ? '+' : '') + v.toFixed(1);
+    return String(Math.round(v * 100) / 100);
+  }
+  function renderCam(m){
+    const cams = m.cams || [], ctrl = m.ctrl || {}, keys = Object.keys(ctrl);
+    $('camGroup').style.display = (cams.length > 1 || keys.length) ? '' : 'none';
+
+    // รายการกล้อง
+    const sel = $('camSel');
+    sel.style.display = cams.length > 1 ? '' : 'none';
+    const cs = cams.map(c => c.id).join('|');
+    if (cs !== camSig) {
+      camSig = cs; sel.textContent = '';
+      cams.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = 'กล้อง ' + c.n + ' · ' + (c.face === 'user' ? 'หน้า' : 'หลัง');
+        sel.appendChild(o);
+      });
+    }
+    if (m.cur) sel.value = m.cur;
+
+    // แถบปรับค่า (โชว์เฉพาะที่รองรับ)
+    const sg = m.cur + '|' + keys.map(k => k + ctrl[k].min + ctrl[k].max + ctrl[k].step).join(',');
+    const box = $('adjBox');
+    $('btnAdjReset').style.display = keys.length ? '' : 'none';
+    if (sg !== adjSig) {
+      adjSig = sg; box.textContent = '';
+      keys.forEach(k => {
+        const c = ctrl[k];
+        const wrap = document.createElement('div'); wrap.className = 'adj';
+        const lab = document.createElement('label');
+        const name = document.createElement('span'); name.textContent = ADJ_LABEL[k] || k;
+        const val = document.createElement('b'); val.id = 'adjv_' + k; val.textContent = fmtAdj(k, c.val);
+        lab.append(name, val);
+        const inp = document.createElement('input');
+        inp.type = 'range'; inp.id = 'adj_' + k; inp.min = c.min; inp.max = c.max; inp.step = c.step; inp.value = c.val;
+        let last = 0;
+        const send = () => { if (dataConn && dataConn.open) dataConn.send({ t:'adj', k, v: +inp.value }); };
+        inp.addEventListener('input', () => {
+          val.textContent = fmtAdj(k, inp.value);
+          const now = Date.now(); if (now - last > 60) { last = now; send(); }
+        });
+        inp.addEventListener('change', send);
+        wrap.append(lab, inp); box.appendChild(wrap);
+      });
+    } else {
+      keys.forEach(k => {
+        const inp = $('adj_' + k);
+        if (inp && document.activeElement !== inp) { inp.value = ctrl[k].val; $('adjv_' + k).textContent = fmtAdj(k, ctrl[k].val); }
+      });
     }
   }
 
@@ -915,6 +991,14 @@
     if (dataConn && dataConn.open) dataConn.send({ t:'ctl', on: ctlOn });
   });
 
+  $('camSel').addEventListener('change', () => {
+    if (dataConn && dataConn.open) dataConn.send({ t:'cam', id: $('camSel').value });
+  });
+  $('btnAdjReset').addEventListener('click', () => {
+    adjSig = '';
+    if (dataConn && dataConn.open) dataConn.send({ t:'adjReset' });
+  });
+
   function toggleFull(){
     const st = $('stage');
     if (document.fullscreenElement) { document.exitFullscreen(); return; }
@@ -949,6 +1033,7 @@
   function startPhone(pcId){
     show('phone');
     let stream, pPeer, pConn, pCall, facing = 'environment';
+    let cams = [], lastByFace = {}, baseTrackId = null, baseVals = {}, swapping = false;
     let hud = true, startedAt = 0, lastBytes = 0, lastT = 0, ended = false;
     let actx, analyser, wake;
 
@@ -1028,11 +1113,87 @@
       try { const t = vTrack(), c = t && t.getCapabilities && t.getCapabilities(); return !!(c && c.torch); }
       catch (e) { return false; }
     }
+    const ADJ_KEYS = ['zoom','exposureCompensation','colorTemperature','iso','focusDistance','brightness','contrast','saturation','sharpness'];
+    const faceOf = label => /front|user|selfie|หน้า/i.test(label || '') ? 'user'
+                          : /back|rear|environment|หลัง/i.test(label || '') ? 'environment' : 'environment';
+    function curId(){ try { return vTrack().getSettings().deviceId; } catch (e) { return null; } }
+    function readCtrl(){
+      const out = {}, t = vTrack();
+      if (!t || !t.getCapabilities) return out;
+      let c, s;
+      try { c = t.getCapabilities(); s = t.getSettings(); } catch (e) { return out; }
+      ADJ_KEYS.forEach(k => {
+        const r = c[k];
+        if (!r || typeof r.min !== 'number' || !(r.max > r.min)) return;
+        if (k === 'focusDistance' && !(c.focusMode && c.focusMode.includes('manual'))) return;
+        if (k === 'colorTemperature' && !(c.whiteBalanceMode && c.whiteBalanceMode.includes('manual'))) return;
+        if (k === 'iso' && !(c.exposureMode && c.exposureMode.includes('manual'))) return;
+        out[k] = { min: r.min, max: r.max, step: r.step || (r.max - r.min) / 100, val: typeof s[k] === 'number' ? s[k] : r.min };
+      });
+      return out;
+    }
+    function renderChips(){
+      const box = $('camChips'), cur = curId();
+      box.textContent = '';
+      if (cams.length < 2) return;
+      cams.forEach(c => {
+        const b = document.createElement('button');
+        b.className = 'pbtn cam' + (c.id === cur ? ' cur' : '');
+        b.textContent = c.n;
+        b.setAttribute('aria-label', 'กล้อง ' + c.n);
+        b.addEventListener('click', () => { if (c.id !== curId()) swapTrack(c.id); });
+        box.appendChild(b);
+      });
+    }
     function syncCaps(){
       const ok = torchSupported();
       $('pbTorch').hidden = !ok;
       $('pbTorch').classList.toggle('on', torchOn && ok);
-      if (pConn && pConn.open) pConn.send({ t:'caps', torch: ok, torchOn: torchOn && ok });
+      const t = vTrack(), ctrl = readCtrl();
+      if (t && t.id !== baseTrackId) {            // จำค่าเริ่มต้นของกล้องนี้ไว้ใช้ตอนรีเซ็ต
+        baseTrackId = t.id; baseVals = {};
+        Object.keys(ctrl).forEach(k => baseVals[k] = ctrl[k].val);
+      }
+      renderChips();
+      if (pConn && pConn.open) pConn.send({
+        t:'caps', torch: ok, torchOn: torchOn && ok,
+        cams: cams.map(c => ({ id: c.id, n: c.n, face: c.face })), cur: curId(), ctrl
+      });
+    }
+    async function refreshCams(){
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const list = devs.filter(d => d.kind === 'videoinput' && d.deviceId)
+          .map(d => ({ id: d.deviceId, face: faceOf(d.label) }));
+        list.sort((a, b) => a.face === b.face ? 0 : (a.face === 'environment' ? -1 : 1));   // กล้องหลังก่อน แล้วค่อยกล้องหน้า
+        list.forEach((c, i) => c.n = i + 1);
+        cams = list;
+        const cc = cams.find(c => c.id === curId());
+        if (cc) { lastByFace[cc.face] = cc.id; facing = cc.face; $('pv').style.transform = facing === 'user' ? 'scaleX(-1)' : 'none'; }
+      } catch (e) { cams = []; }
+      syncCaps();
+    }
+    async function applyAdj(k, v){
+      const t = vTrack();
+      if (!t || ADJ_KEYS.indexOf(k) < 0 || typeof v !== 'number') return;
+      const adv = {}; adv[k] = v;
+      if (k === 'colorTemperature') adv.whiteBalanceMode = 'manual';
+      if (k === 'iso') adv.exposureMode = 'manual';
+      if (k === 'focusDistance') adv.focusMode = 'manual';
+      try { await t.applyConstraints({ advanced: [adv] }); } catch (e) {}
+    }
+    async function resetAdj(){
+      const t = vTrack(); if (!t) return;
+      let c = {}; try { c = t.getCapabilities(); } catch (e) {}
+      const modes = [['focusMode','continuous'], ['whiteBalanceMode','continuous'], ['exposureMode','continuous']];
+      for (const [m, v] of modes) {
+        if (c[m] && c[m].includes(v)) { try { await t.applyConstraints({ advanced: [{ [m]: v }] }); } catch (e) {} }
+      }
+      for (const k of Object.keys(baseVals)) {
+        if (k === 'iso' || k === 'colorTemperature' || k === 'focusDistance') continue;   // ปล่อยให้โหมดอัตโนมัติจัดการ
+        try { await t.applyConstraints({ advanced: [{ [k]: baseVals[k] }] }); } catch (e) {}
+      }
+      syncCaps();
     }
     async function setTorch(on){
       const t = vTrack();
@@ -1044,10 +1205,11 @@
     $('pbFlip').addEventListener('click', () => flip());
     $('pbTorch').addEventListener('click', () => setTorch(!torchOn));
 
-    async function getMedia(wantAudio){
-      const c = {
-        video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
-      };
+    async function getMedia(wantAudio, deviceId){
+      const v = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+      if (deviceId) v.deviceId = { exact: deviceId };
+      else v.facingMode = { ideal: facing };
+      const c = { video: v };
       if (wantAudio) c.audio = { echoCancellation: true, noiseSuppression: true };
       return navigator.mediaDevices.getUserMedia(c);
     }
@@ -1070,6 +1232,8 @@
       $('pv').style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
       setupMeter();
       syncCaps();
+      refreshCams();
+      if (navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', refreshCams);
       try { wake = await navigator.wakeLock.request('screen'); } catch(e){}
       connectToPC();
     }
@@ -1145,6 +1309,9 @@
         } catch (e) {}
       }
       if (m.t === 'flip') flip();
+      if (m.t === 'cam' && m.id) swapTrack(m.id);
+      if (m.t === 'adj') applyAdj(m.k, m.v);
+      if (m.t === 'adjReset') resetAdj();
       if (m.t === 'end') {
         ended = true;
         try { pPeer.destroy(); } catch(e){}
@@ -1158,28 +1325,45 @@
       }
     }
 
+    async function installTrack(nv, oldV){
+      if (oldV) { try { stream.removeTrack(oldV); } catch (e) {} }
+      stream.addTrack(nv);
+      $('pv').srcObject = stream;
+      if (pCall && pCall.peerConnection) {
+        const sender = pCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) await sender.replaceTrack(nv);
+      }
+    }
+    // สลับไปกล้องตัวที่เลือก (deviceId) หรือสลับหน้า/หลังถ้าไม่ระบุ
+    async function swapTrack(deviceId, faceHint){
+      if (!stream || swapping) return;
+      swapping = true;
+      const oldV = vTrack();
+      const prevId = oldV && oldV.getSettings().deviceId, prevFacing = facing;
+      if (oldV) oldV.stop();  // มือถือบางรุ่นเปิดสองกล้องพร้อมกันไม่ได้
+      if (faceHint) facing = faceHint;
+      try {
+        const ns = await getMedia(false, deviceId);
+        const nv = ns.getVideoTracks()[0];
+        await installTrack(nv, oldV);
+        torchOn = false;                  // สลับกล้องแล้วแฟลชดับเอง ต้องกดเปิดใหม่
+        await refreshCams();              // อัปเดตรายการ + ค่าที่ปรับได้ของกล้องตัวใหม่
+      } catch (e) {
+        err('สลับกล้องไม่ได้: ' + e.name); setTimeout(() => err(''), 2500);
+        facing = prevFacing;
+        try {                             // กู้กล้องเดิมกลับมา
+          const rs = await getMedia(false, prevId);
+          await installTrack(rs.getVideoTracks()[0], oldV);
+        } catch (e2) {}
+        torchOn = false; await refreshCams();
+      }
+      swapping = false;
+    }
     async function flip(){
       if (!stream) return;
-      facing = facing === 'environment' ? 'user' : 'environment';
-      const oldV = stream.getVideoTracks()[0];
-      if (oldV) oldV.stop();  // มือถือบางรุ่นเปิดสองกล้องพร้อมกันไม่ได้
-      try {
-        const ns = await getMedia(false);
-        const nv = ns.getVideoTracks()[0];
-        stream.removeTrack(oldV);
-        stream.addTrack(nv);
-        $('pv').srcObject = stream;
-        $('pv').style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
-        if (pCall && pCall.peerConnection) {
-          const sender = pCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-          if (sender) await sender.replaceTrack(nv);
-        }
-        torchOn = false; syncCaps();      // สลับกล้องแล้วแฟลชดับเอง ต้องกดเปิดใหม่
-      } catch (e) {
-        err('สลับกล้องไม่ได้: ' + e.name);
-        facing = facing === 'environment' ? 'user' : 'environment';
-        torchOn = false; syncCaps();
-      }
+      const other = facing === 'environment' ? 'user' : 'environment';
+      const target = cams.find(c => c.id === lastByFace[other]) || cams.find(c => c.face === other);
+      swapTrack(target ? target.id : null, other);
     }
 
     function tuneBitrate(){
