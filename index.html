@@ -274,13 +274,38 @@
     opacity:.65;transition:opacity .2s,background .2s}
   .pbtn:active{opacity:1}
   .pbtn.on{background:var(--amber);color:#1a1300;opacity:1}
-  .pbtn.cam{font-size:15px;font-weight:700;font-family:inherit}
-  .pbtn.cam.cur{background:#fff;color:#111;opacity:1}
-  .adjbox{display:grid;gap:12px}
-  .adj{display:grid;gap:4px}
-  .adj label{display:flex;justify-content:space-between;font-size:13px}
-  .adj label b{font-weight:600;color:var(--amber)}
-  .adj input[type=range]{width:100%;accent-color:var(--amber)}
+  /* แคปซูลควบคุมบนมือถือ: รวมทุกปุ่มไว้ก้อนเดียว */
+  #phoneCtl{gap:4px;padding:5px;border-radius:26px;background:rgba(8,10,24,.42);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.1)}
+  #phoneCtl .pbtn{width:36px;height:36px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+  #phoneCtl .pbtn .ico{width:19px;height:19px}
+  .pbtn.cam{font-size:14px;font-weight:700;font-family:inherit;opacity:.7}
+  .pbtn.cam.cur{background:#fff!important;color:#111;opacity:1}
+  .camsep{height:1px;margin:2px 8px;background:rgba(255,255,255,.14)}
+  .camsep:empty:only-child{display:none}
+
+  /* แผงกล้องบนคอม */
+  .pills{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{flex:1 1 auto;min-width:0;padding:9px 12px;border-radius:12px;font:inherit;font-size:13px;font-weight:600;color:var(--muted);
+    background:rgba(0,0,0,.22);border:1px solid var(--line);cursor:pointer;transition:all .15s;white-space:nowrap}
+  .pill small{display:block;font-size:10.5px;font-weight:400;opacity:.75;margin-top:1px}
+  .pill:hover{color:var(--text)}
+  .pill.cur{background:var(--amber);border-color:var(--amber);color:#1a1300}
+  details.adjdet{border:1px solid var(--line);border-radius:16px;background:rgba(0,0,0,.22);overflow:hidden}
+  details.adjdet summary{list-style:none;cursor:pointer;padding:13px 16px;font-weight:500;display:flex;justify-content:space-between;align-items:center}
+  details.adjdet summary::-webkit-details-marker{display:none}
+  details.adjdet summary::after{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+    transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+  details.adjdet[open] summary::after{transform:rotate(-135deg)}
+  .adjbody{padding:2px 16px 14px;display:grid;gap:14px}
+  .adj{display:grid;gap:6px}
+  .adj label{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+  .adj label b{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+  .adj input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:rgba(255,255,255,.16);outline:none}
+  .adj input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--amber);border:0;box-shadow:0 0 0 4px rgba(245,185,76,.22)}
+  .adj input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--amber);border:0}
+  .adjreset{justify-self:start;background:none;border:0;color:var(--muted);font:inherit;font-size:12.5px;cursor:pointer;padding:2px 0;text-decoration:underline;text-underline-offset:3px}
+  .adjreset:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -453,9 +478,14 @@
 
     <div class="group" id="camGroup" style="display:none">
       <h3>กล้อง / เลนส์มือถือ</h3>
-      <select class="sel" id="camSel" aria-label="เลือกกล้องของมือถือ"></select>
-      <div class="adjbox" id="adjBox"></div>
-      <button class="act" id="btnAdjReset" style="display:none">รีเซ็ตค่าเป็นอัตโนมัติ</button>
+      <div class="pills" id="camPills"></div>
+      <details class="adjdet" id="adjDet" style="display:none">
+        <summary>ปรับแต่งภาพ <span id="adjCount" style="color:var(--muted);font-size:12.5px;margin-left:auto;margin-right:10px"></span></summary>
+        <div class="adjbody">
+          <div class="adjbox" id="adjBox" style="gap:14px"></div>
+          <button class="adjreset" id="btnAdjReset">รีเซ็ตเป็นอัตโนมัติ</button>
+        </div>
+      </details>
     </div>
 
     <div class="group">
@@ -656,24 +686,26 @@
     const cams = m.cams || [], ctrl = m.ctrl || {}, keys = Object.keys(ctrl);
     $('camGroup').style.display = (cams.length > 1 || keys.length) ? '' : 'none';
 
-    // รายการกล้อง
-    const sel = $('camSel');
-    sel.style.display = cams.length > 1 ? '' : 'none';
-    const cs = cams.map(c => c.id).join('|');
+    // รายการกล้อง (ปุ่มเลือก)
+    const pills = $('camPills');
+    pills.style.display = cams.length > 1 ? '' : 'none';
+    const cs = cams.map(c => c.id).join('|') + '|' + m.cur;
     if (cs !== camSig) {
-      camSig = cs; sel.textContent = '';
+      camSig = cs; pills.textContent = '';
       cams.forEach(c => {
-        const o = document.createElement('option');
-        o.value = c.id; o.textContent = 'กล้อง ' + c.n + ' · ' + (c.face === 'user' ? 'หน้า' : 'หลัง');
-        sel.appendChild(o);
+        const b = document.createElement('button');
+        b.className = 'pill' + (c.id === m.cur ? ' cur' : '');
+        b.innerHTML = 'กล้อง ' + c.n + '<small>' + (c.face === 'user' ? 'หน้า' : 'หลัง') + '</small>';
+        b.addEventListener('click', () => { if (dataConn && dataConn.open) dataConn.send({ t:'cam', id: c.id }); });
+        pills.appendChild(b);
       });
     }
-    if (m.cur) sel.value = m.cur;
 
     // แถบปรับค่า (โชว์เฉพาะที่รองรับ)
     const sg = m.cur + '|' + keys.map(k => k + ctrl[k].min + ctrl[k].max + ctrl[k].step).join(',');
     const box = $('adjBox');
-    $('btnAdjReset').style.display = keys.length ? '' : 'none';
+    $('adjDet').style.display = keys.length ? '' : 'none';
+    $('adjCount').textContent = keys.length ? keys.length + ' ค่า' : '';
     if (sg !== adjSig) {
       adjSig = sg; box.textContent = '';
       keys.forEach(k => {
@@ -991,9 +1023,6 @@
     if (dataConn && dataConn.open) dataConn.send({ t:'ctl', on: ctlOn });
   });
 
-  $('camSel').addEventListener('change', () => {
-    if (dataConn && dataConn.open) dataConn.send({ t:'cam', id: $('camSel').value });
-  });
   $('btnAdjReset').addEventListener('click', () => {
     adjSig = '';
     if (dataConn && dataConn.open) dataConn.send({ t:'adjReset' });
@@ -1144,6 +1173,7 @@
         b.addEventListener('click', () => { if (c.id !== curId()) swapTrack(c.id); });
         box.appendChild(b);
       });
+      const sep = document.createElement('div'); sep.className = 'camsep'; box.appendChild(sep);
     }
     function syncCaps(){
       const ok = torchSupported();
