@@ -260,6 +260,20 @@
   .obshelp summary{cursor:pointer}
   .obshelp ol{margin:8px 0 0 20px;display:grid;gap:4px}
 
+  /* ต่อกับคอมเครื่องล่าสุด (หน้าแรกบนมือถือ) + แผงตอนหลุด */
+  .resume{margin:0 0 22px;padding:16px 18px;border-radius:18px;background:rgba(95,212,160,.1);border:1px solid rgba(95,212,160,.35);max-width:46ch}
+  .resume b{display:block;font-family:var(--display);font-weight:600;margin-bottom:4px}
+  .resume p{color:var(--muted);font-size:13.5px;margin-bottom:12px}
+  .resume .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .resume .btn{background:linear-gradient(180deg,#6fe0ae,#3fb985);box-shadow:0 14px 34px -10px rgba(95,212,160,.6), inset 0 1px 0 rgba(255,255,255,.35);color:#06261a;font-size:16px;padding:12px 22px}
+  .or{color:var(--muted);font-size:13px;margin:0 0 10px}
+  #lostPanel{position:absolute;left:18px;right:18px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:5;
+    background:rgba(8,10,24,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--line);border-radius:18px;padding:16px;display:grid;gap:10px;text-align:center}
+  #lostPanel b{font-family:var(--display);font-weight:600}
+  #lostPanel small{color:var(--muted)}
+  #lostPanel .btn{font-size:15px;padding:12px 18px}
+
   /* โอเวอร์เลย์จาก OBS วางทับภาพกล้องบนมือถือ */
   #ovl{position:absolute;display:none;overflow:hidden;pointer-events:none}
   #ovlInner{position:absolute;left:0;top:0;transform-origin:0 0}
@@ -318,6 +332,15 @@
       <span class="tally" aria-hidden="true"></span>
       <h1>ใช้มือถือเป็นกล้องไลฟ์ IRL</h1>
       <p class="lead">เปิดหน้านี้บนคอม สแกน QR ด้วยมือถือ แล้วภาพจากกล้องมือถือจะขึ้นบนคอมทันที พร้อมนำไปจับภาพใน OBS ต่อได้</p>
+      <div class="resume" id="resumeBox" hidden>
+        <b>เคยเชื่อมกับคอมไว้แล้ว</b>
+        <p>จะหลุดหรือไม่หลุดก็กดต่อกับคอมเครื่องล่าสุดได้ทุกเมื่อ ไม่ต้องสแกน QR ใหม่ (คอมต้องเปิดหน้านี้แล้วกด “เริ่มบนคอม” ค้างไว้)</p>
+        <div class="row">
+          <button class="btn" id="resumeGo">ต่อกับคอมเครื่องล่าสุด</button>
+          <button class="btn ghost" id="resumeForget">ลืมเครื่องนี้</button>
+        </div>
+      </div>
+      <p class="or" id="resumeOr" hidden>หรือถ้าจะใช้บนคอม / จับคู่เครื่องใหม่ด้วย QR:</p>
       <button class="btn" id="startPC">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m15 10 6-3v10l-6-3"/></svg>
         เริ่มบนคอม
@@ -559,6 +582,12 @@
     <div id="lensBox"></div>
   </div>
   <audio id="alertAudio" autoplay playsinline></audio>
+  <div id="lostPanel" hidden>
+    <b>เชื่อมต่อกับคอมไม่ติด</b>
+    <small>เลือกได้ว่าจะลองต่อกับคอมเครื่องเดิมอีกครั้ง หรือกลับไปสแกน QR ใหม่</small>
+    <button class="btn" id="lostRetry">ลองต่อเครื่องล่าสุดอีกครั้ง</button>
+    <button class="btn ghost" id="lostScan">สแกน QR ใหม่</button>
+  </div>
   <div id="phoneErr" hidden></div>
   <div id="phoneStart" hidden>
     <span class="tally" aria-hidden="true"></span>
@@ -582,7 +611,7 @@
   ]};
 
   const $ = id => document.getElementById(id);
-  const BUILD = 'r10';
+  const BUILD = 'r11';
   ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
@@ -595,13 +624,32 @@
   if (camId) startPhone(camId); else initPC();
 
   /* ======================= ฝั่งคอม ======================= */
+  const LS = {
+    get(k){ try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v){ try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k){ try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  function lastPc(){
+    const v = LS.get('irl_last_pc');
+    return v && /^irlcam-[a-z0-9]+$/.test(v) ? v : null;
+  }
+
   function initPC(){
     show('home');
+    if (lastPc()) { $('resumeBox').hidden = false; $('resumeOr').hidden = false; }
+    $('resumeGo').addEventListener('click', () => {
+      const id = lastPc(); if (!id) return;
+      history.replaceState(null, '', location.pathname + '?cam=' + encodeURIComponent(id));
+      startPhone(id);
+    });
+    $('resumeForget').addEventListener('click', () => {
+      LS.del('irl_last_pc'); $('resumeBox').hidden = true; $('resumeOr').hidden = true;
+    });
     if (location.protocol !== 'https:' && location.hostname !== 'localhost') $('httpsWarn').hidden = false;
     $('startPC').addEventListener('click', startPC);
   }
 
-  let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode;
+  let peer, dataConn, mediaCall, connectedAt = 0, statTimer, pairCode, idRetry = 0;
   let hudOn = true;
   let meterOn = true;
   let ctlOn = true;                        // แสดงปุ่มสลับกล้อง/แฟลชบนมือถือ
@@ -611,7 +659,9 @@
   function startPC(){
     show('pair');
     $('pairStatus').textContent = 'กำลังเตรียมห้อง…';
-    pairCode = 'irlcam-' + Math.random().toString(36).slice(2, 8);
+    // ใช้รหัสห้องเดิมของคอมเครื่องนี้ซ้ำ เพื่อให้มือถือกด “ต่อเครื่องล่าสุด” ได้แม้คอมรีเฟรชหน้า
+    if (!pairCode) pairCode = LS.get('irl_pc_code') || ('irlcam-' + Math.random().toString(36).slice(2, 8));
+    LS.set('irl_pc_code', pairCode);
     peer = new Peer(pairCode, { config: RTC });
 
     peer.on('open', id => {
@@ -662,7 +712,14 @@
 
     peer.on('disconnected', () => { try { peer.reconnect(); } catch(e){} });
     peer.on('error', e => {
-      if (e.type === 'unavailable-id') { peer.destroy(); startPC(); return; }
+      if (e.type === 'unavailable-id') {
+        // รหัสเดิมยังค้างอยู่บนเซิร์ฟเวอร์ (เพิ่งรีเฟรช) รอสักครู่แล้วลองใหม่ ถ้าไม่ได้จริงๆ ค่อยสุ่มรหัสใหม่
+        peer.destroy();
+        idRetry = (idRetry || 0) + 1;
+        if (idRetry > 4) { idRetry = 0; pairCode = 'irlcam-' + Math.random().toString(36).slice(2, 8); }
+        setTimeout(startPC, idRetry ? 2000 : 0);
+        return;
+      }
       $('pairStatus').textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (' + e.type + ') ลองรีเฟรชหน้านี้';
     });
   }
@@ -1081,6 +1138,7 @@
   /* ======================= ฝั่งมือถือ ======================= */
   function startPhone(pcId){
     show('phone');
+    LS.set('irl_last_pc', pcId);
     let stream, pPeer, pConn, pCall, facing = 'environment';
     let cams = [], lastByFace = {}, baseTrackId = null, baseVals = {}, swapping = false;
     let hud = true, startedAt = 0, lastBytes = 0, lastT = 0, ended = false;
@@ -1377,6 +1435,7 @@
       pPeer.on('open', () => {
         pConn = pPeer.connect(pcId, { reliable: true });
         pConn.on('open', async () => {
+          failCount = 0; $('lostPanel').hidden = true; err('');
           // ต่อใหม่ทุกครั้ง ตรวจแทร็กไมค์ก่อนส่งภาพ ถ้าหลุดไปแล้วให้เปิดใหม่
           await Promise.race([ensureMic(false), new Promise(r => setTimeout(r, 4000))]);
           applyMic(true);
@@ -1412,14 +1471,26 @@
       });
     }
 
-    let retryTimer;
+    let retryTimer, failCount = 0;
     function retry(){
       if (ended) return;
       $('dot').classList.remove('on');
       setState('หลุด กำลังต่อใหม่', true);
+      // หลุดต่อเนื่องหลายรอบ ให้ผู้ใช้เลือกเองว่าจะลองต่อเครื่องเดิมอีก หรือสแกน QR ใหม่ (ระบบยังลองต่อเองอยู่เบื้องหลัง)
+      if (++failCount >= 3) $('lostPanel').hidden = false;
       clearTimeout(retryTimer);
       retryTimer = setTimeout(connectToPC, 2500);
     }
+    $('lostRetry').addEventListener('click', () => {
+      failCount = 0; $('lostPanel').hidden = true; err('');
+      clearTimeout(retryTimer); connectToPC();
+    });
+    $('lostScan').addEventListener('click', () => {
+      ended = true; clearTimeout(retryTimer);
+      LS.del('irl_last_pc');
+      try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      location.href = location.pathname;   // กลับหน้าแรก (หน้าสแกน QR)
+    });
 
     function setState(txt, idle){
       $('hState').textContent = txt;
