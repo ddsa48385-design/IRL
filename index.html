@@ -611,7 +611,7 @@
   ]};
 
   const $ = id => document.getElementById(id);
-  const BUILD = 'r11';
+  const BUILD = 'r12';
   ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
@@ -621,9 +621,6 @@
     ['home','pair','live','phone'].forEach(x => { $(x).hidden = (x !== id); });
   }
 
-  if (camId) startPhone(camId); else initPC();
-
-  /* ======================= ฝั่งคอม ======================= */
   const LS = {
     get(k){ try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v){ try { localStorage.setItem(k, v); } catch (e) {} },
@@ -634,6 +631,9 @@
     return v && /^irlcam-[a-z0-9]+$/.test(v) ? v : null;
   }
 
+  if (camId) startPhone(camId); else initPC();
+
+  /* ======================= ฝั่งคอม ======================= */
   function initPC(){
     show('home');
     if (lastPc()) { $('resumeBox').hidden = false; $('resumeOr').hidden = false; }
