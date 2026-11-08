@@ -611,7 +611,7 @@
   ]};
 
   const $ = id => document.getElementById(id);
-  const BUILD = 'r12';
+  const BUILD = 'r13';
   ['buildTag', 'buildTag2', 'hBuild'].forEach(id => { const e = $(id); if (e) e.textContent = 'เวอร์ชันหน้าเว็บ ' + BUILD; });
   const params = new URLSearchParams(location.search);
   const camId = params.get('cam');
@@ -636,7 +636,14 @@
   /* ======================= ฝั่งคอม ======================= */
   function initPC(){
     show('home');
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
     if (lastPc()) { $('resumeBox').hidden = false; $('resumeOr').hidden = false; }
+    else if (isMobile) {                       // มือถือที่ยังไม่เคยจับคู่ โชว์กล่องไว้ให้เห็น แต่ปุ่มยังกดไม่ได้
+      $('resumeBox').hidden = false; $('resumeOr').hidden = false;
+      $('resumeGo').disabled = true; $('resumeGo').style.opacity = '.45'; $('resumeForget').hidden = true;
+      $('resumeBox').querySelector('b').textContent = 'ยังไม่มีคอมเครื่องล่าสุด';
+      $('resumeBox').querySelector('p').textContent = 'เครื่องนี้ยังไม่เคยเชื่อมกับคอมสำเร็จ (หรือเบราว์เซอร์นี้ไม่ใช่ตัวเดียวกับที่เคยสแกน) สแกน QR จากคอมหนึ่งครั้งก่อน หลังจากนั้นปุ่มนี้จะใช้ได้';
+    }
     $('resumeGo').addEventListener('click', () => {
       const id = lastPc(); if (!id) return;
       history.replaceState(null, '', location.pathname + '?cam=' + encodeURIComponent(id));
