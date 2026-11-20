@@ -677,7 +677,7 @@
     peer = new Peer(pairCode, { config: RTC });
 
     peer.on('open', id => {
-      const url = location.origin + location.pathname + '?cam=' + encodeURIComponent(id) + '&v=' + Date.now();
+      const url = location.origin + location.pathname + '?cam=' + encodeURIComponent(id);   // ลิงก์คงที่ ไม่ใส่ตัวเลขสุ่มต่อท้าย
       $('linkInput').value = url;
       $('qr').innerHTML = '';
       new QRCode($('qr'), { text: url, width: 224, height: 224, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
@@ -1156,7 +1156,7 @@
     let hud = true, startedAt = 0, lastBytes = 0, lastT = 0, ended = false;
     let actx, analyser, wake, meterSrc, meterLoopOn = false;
     let micOn = true, micBusy = false, micMutedTicks = 0;
-    let mics = [], micManual = null, knownMicIds = new Set(), lastMicSig = '';   // micOn = ความตั้งใจของผู้ใช้ จำไว้ข้ามการต่อใหม่
+    let mics = [], micManual = null, knownMicIds = new Set(), lastMicSwap = 0, vDeadTicks = 0;   // micOn = ความตั้งใจของผู้ใช้ จำไว้ข้ามการต่อใหม่
 
     const err = msg => { $('phoneErr').textContent = msg; $('phoneErr').hidden = !msg; };
 
@@ -1395,6 +1395,7 @@
     async function swapMic(id){
       if (ended || !stream || micBusy) return false;
       micBusy = true;
+      lastMicSwap = Date.now();
       let nt = null;
       const old = aTrack();
       if (old) { try { stream.removeTrack(old); } catch (e) {} try { old.stop(); } catch (e) {} }   // ปล่อยตัวเดิมก่อน กันบางรุ่นยังจับไมค์เครื่องค้าง
@@ -1420,31 +1421,46 @@
       }
       micBusy = false;
       showMic();
+      setTimeout(checkVideoAlive, 1500);   // เปิดไมค์ใหม่แล้วภาพบางรุ่น (โดยเฉพาะ iPhone) ค้างตาม ตรวจแล้วกู้กล้องให้
       return !!nt;
     }
+    function checkVideoAlive(){
+      const v = vTrack();
+      if (!v || ended || swapping || document.visibilityState !== 'visible') return;
+      if (v.readyState === 'ended' || v.muted) swapTrack(curId() || null);
+    }
     // ตรวจรายการไมค์ แล้วเลือกให้: ที่ผู้ใช้กดเลือกเอง > ไมค์ภายนอก (สาย/USB/บลูทูธ) > ตัวเริ่มต้นของระบบ
-    async function syncMicSource(){
+    // สลับจริงเฉพาะตอนเริ่ม หรือตอนมีอุปกรณ์เสียบ/ถอดจริง ๆ เท่านั้น (ไม่สลับเองทุกครั้งที่เรียก ไม่งั้นภาพจะค้าง)
+    const isDefId = id => !id || id === 'default' || id === 'communications';
+    async function syncMicSource(fromEvent){
       if (ended || !stream || micBusy) return;
       let list; try { list = await listMics(); } catch (e) { return; }
       const ids = new Set(list.map(d => d.deviceId));
-      const sig = list.map(d => d.deviceId + '|' + d.label).join(';');
-      const changed = !!lastMicSig && sig !== lastMicSig;
-      const added = knownMicIds.size ? list.filter(d => !knownMicIds.has(d.deviceId)) : [];
-      knownMicIds = ids; lastMicSig = sig;
+      const hadList = knownMicIds.size > 0;
+      const added = hadList ? list.filter(d => !knownMicIds.has(d.deviceId)) : [];
+      const removed = hadList ? [...knownMicIds].filter(id => !ids.has(id)) : [];
+      knownMicIds = ids;
       $('pbMicSrc').hidden = list.length < 2;
       if (micManual && !ids.has(micManual)) micManual = null;      // ตัวที่เลือกไว้ถูกถอดออกแล้ว กลับไปโหมดอัตโนมัติ
-      let want = micManual;
-      if (!want) { const ext = list.find(isExt) || added[0]; want = ext ? ext.deviceId : null; }
       const cur = curMicId();
+      const cooling = Date.now() - lastMicSwap < 5000;
+      let want = micManual;
+      if (!want && (!hadList || (fromEvent && added.length))) {
+        const ext = list.find(isExt) || added[0];
+        want = ext ? ext.deviceId : null;
+      }
       if (want) {
-        if (want !== cur) { await swapMic(want); if (!micManual) toast('สลับไปใช้ไมค์: ' + (micLabel(want) || 'ภายนอก')); }
-      } else if (!cur || !ids.has(cur) || changed) {
-        await swapMic(null);              // ถอดสายแล้ว หรือระบบเปลี่ยนเส้นทางเสียง (เช่น iPhone) ให้เปิดไมค์ใหม่ตามค่าเริ่มต้น
+        if (want !== cur && (micManual || !cooling)) {
+          await swapMic(want);
+          if (!micManual) toast('สลับไปใช้ไมค์: ' + (micLabel(want) || 'ภายนอก'));
+        }
+      } else if (fromEvent && !cooling && (removed.includes(cur) || (!isDefId(cur) && !ids.has(cur)) || added.length)) {
+        await swapMic(null);              // ถอดสาย หรือระบบเปลี่ยนเส้นทางเสียง ให้เปิดไมค์ใหม่ตามค่าเริ่มต้น
       }
       showMic();
     }
     let micDevTimer = null;
-    function onMicDeviceChange(){ clearTimeout(micDevTimer); micDevTimer = setTimeout(syncMicSource, 700); }
+    function onMicDeviceChange(){ clearTimeout(micDevTimer); micDevTimer = setTimeout(() => syncMicSource(true), 700); }
     $('pbMicSrc').addEventListener('click', async () => {
       try { await listMics(); } catch (e) {}
       if (!mics.length) { toast('ไม่พบไมค์'); return; }
@@ -1453,7 +1469,7 @@
       const next = opts[(pos + 1) % opts.length];
       micManual = next;
       if (next) { await swapMic(next); toast('ใช้ไมค์: ' + (micLabel(next) || 'ไมค์')); }
-      else { toast('ไมค์: อัตโนมัติ'); await syncMicSource(); }
+      else { toast('ไมค์: อัตโนมัติ'); await swapMic(null); }
     });
 
     async function ensureMic(force){
@@ -1467,6 +1483,11 @@
       const a = aTrack();
       if (a && a.muted) micMutedTicks++; else micMutedTicks = 0;
       ensureMic(false);
+      // กล้องค้าง (แทร็กภาพหยุด/ถูกระบบ mute นานเกิน ~6 วินาทีขณะเปิดหน้าอยู่) ให้เปิดกล้องใหม่เอง
+      const v = vTrack();
+      if (v && !swapping && document.visibilityState === 'visible' && (v.readyState === 'ended' || v.muted)) {
+        if (++vDeadTicks >= 3) { vDeadTicks = 0; swapTrack(curId() || null); }
+      } else vDeadTicks = 0;
     }, 2000);
     $('pbMic').addEventListener('click', () => { micOn = !micOn; applyMic(); });
 
